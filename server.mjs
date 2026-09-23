@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startBridge, stopBridge, listBridges, checkBridge } from './bridge.mjs';
+import { startBridge, stopBridge, listBridges, checkBridge, startBridgePool, stopBridgePool } from './bridge.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = join(root, 'public');
@@ -17,7 +17,7 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
 
 async function readJson(req) {
   let body = '';
-  for await (const chunk of req) { body += chunk; if (body.length > 20000) throw new Error('请求过大'); }
+  for await (const chunk of req) { body += chunk; if (body.length > 256000) throw new Error('请求过大'); }
   return JSON.parse(body || '{}');
 }
 
@@ -48,6 +48,8 @@ const server = http.createServer(async (req, res) => {
     if (requestUrl.pathname === '/api/bridge/start' && req.method === 'POST') return send(res, 200, await startBridge(await readJson(req)));
     if (requestUrl.pathname === '/api/bridge/stop' && req.method === 'POST') return send(res, 200, await stopBridge((await readJson(req)).appId));
     if (requestUrl.pathname === '/api/bridge/check' && req.method === 'POST') return send(res, 200, await checkBridge((await readJson(req)).appId));
+    if (requestUrl.pathname === '/api/bridge/pool/start' && req.method === 'POST') return send(res, 200, await startBridgePool((await readJson(req)).items));
+    if (requestUrl.pathname === '/api/bridge/pool/stop' && req.method === 'POST') return send(res, 200, await stopBridgePool());
     const pathname = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname;
     const file = normalize(join(publicDir, pathname));
     if (!file.startsWith(publicDir) || !existsSync(file)) return send(res, 404, { error: 'Not found' });

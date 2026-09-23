@@ -84,6 +84,29 @@ function publicBridge(bridge) {
 
 export function listBridges() { return [...bridges.values()].map(publicBridge); }
 
+export async function startBridgePool(items) {
+  if (!Array.isArray(items) || !items.length) throw new Error('没有可转换的协议节点');
+  if (items.length > 60) throw new Error('单次最多转换 60 个节点，请先搜索筛选后再生成');
+  await stopBridgePool();
+  const started = [];
+  const failed = [];
+  for (const item of items) {
+    try {
+      started.push(await startBridge({ appId: `pool-${item.id}`, name: item.name, rawLine: item.rawLine }));
+    } catch (error) {
+      failed.push({ name: item.name, error: error.message });
+    }
+  }
+  if (!started.length) throw new Error(failed[0]?.error || '没有节点启动成功');
+  return { bridges: started, failed };
+}
+
+export async function stopBridgePool() {
+  const poolIds = [...bridges.keys()].filter(id => id.startsWith('pool-'));
+  for (const id of poolIds) await stopBridge(id);
+  return { stopped: poolIds.length };
+}
+
 export async function stopBridge(appId) {
   const bridge = bridges.get(appId);
   if (!bridge) return { stopped: false };
