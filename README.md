@@ -7,7 +7,7 @@
 - `username:password@hostname:port`
 - `hostname:port@username:password`
 
-对于 SS、VMess、VLESS、Trojan 节点，四段式文本不是可直接连接的 HTTP 代理。应用分配页会调用本机 Clash Verge 的 Mihomo 内核，把选中节点转换为仅监听 `127.0.0.1` 的本地 HTTP 代理，并显示真实的 `127.0.0.1:port:username:password`。启动前会用 Mihomo 校验配置；停止应用分配时会关闭对应子进程。
+对于 SS、VMess、VLESS、Trojan 节点，四段式文本不是可直接连接的 HTTP 代理。应用分配页会调用本机 Clash Verge 的 Mihomo 内核，把选中节点转换为仅监听 `127.0.0.1` 的本地 HTTP 代理，并显示真实的 `127.0.0.1:port:username:password`。单个应用分配使用一个 Mihomo 进程；批量代理池使用一个 Mihomo 进程和多个 `listeners`，每个节点仍有独立本地端口，避免为每个节点重复加载内核。启动前会用 Mihomo 校验配置；停止应用分配时会关闭对应进程。
 
 “复制可直接代理”会跳过 SS/VMess 和缺少账号或密码的条目，避免生成目标应用会拒绝的无效代理池。若之前已经复制过旧列表，需要先在目标应用中删除旧条目，再使用应用分配页生成的本地代理。
 

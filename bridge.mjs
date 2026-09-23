@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 
 const engine = process.env.MIHOMO_PATH || 'D:\\Clash Verge\\verge-mihomo.exe';
 const bridges = new Map();
+let poolRuntime = null;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 function freePort() {
@@ -32,6 +33,12 @@ function validate(input) {
 
 function configText(line, name, port, username, password) {
   return `mixed-port: ${port}\nallow-lan: false\nbind-address: 127.0.0.1\nmode: rule\nlog-level: warning\nauthentication:\n  - ${JSON.stringify(`${username}:${password}`)}\nproxies:\n  ${line}\nproxy-groups:\n  - name: ROUTE\n    type: select\n    proxies:\n      - ${JSON.stringify(name)}\nrules:\n  - MATCH,ROUTE\n`;
+}
+
+function poolConfigText(items, entries) {
+  const proxies = items.map(item => `  ${item.rawLine.trim()}`).join('\n');
+  const listeners = entries.map(entry => `  - name: ${JSON.stringify(entry.listenerName)}\n    type: mixed\n    port: ${entry.port}\n    listen: 127.0.0.1\n    proxy: ${JSON.stringify(entry.name)}\n    users:\n      - username: ${JSON.stringify(entry.username)}\n        password: ${JSON.stringify(entry.password)}`).join('\n');
+  return `allow-lan: false\nbind-address: 127.0.0.1\nmode: rule\nlog-level: warning\nproxies:\n${proxies}\nlisteners:\n${listeners}\nrules:\n  - MATCH,DIRECT\n`;
 }
 
 async function waitForPort(port, child) {
@@ -88,22 +95,44 @@ export async function startBridgePool(items) {
   if (!Array.isArray(items) || !items.length) throw new Error('没有可转换的协议节点');
   if (items.length > 60) throw new Error('单次最多转换 60 个节点，请先搜索筛选后再生成');
   await stopBridgePool();
-  const started = [];
-  const failed = [];
+  if (!existsSync(engine)) throw new Error('未找到 Mihomo 内核，请确认 Clash Verge 安装在 D:\\Clash Verge');
+  const entries = [];
   for (const item of items) {
-    try {
-      started.push(await startBridge({ appId: `pool-${item.id}`, name: item.name, rawLine: item.rawLine }));
-    } catch (error) {
-      failed.push({ name: item.name, error: error.message });
-    }
+    const { name, rawLine } = validate({ appId: `pool-${item.id}`, name: item.name, rawLine: item.rawLine });
+    entries.push({ appId: `pool-${item.id}`, name, rawLine, listenerName: `pool-${item.id}`, port: await freePort(), username: `pool${randomBytes(4).toString('hex')}`, password: randomBytes(18).toString('base64url') });
   }
-  if (!started.length) throw new Error(failed[0]?.error || '没有节点启动成功');
-  return { bridges: started, failed };
+  const directory = await mkdtemp(join(tmpdir(), 'proxy-dispatcher-pool-'));
+  const config = join(directory, 'config.yaml');
+  await writeFile(config, poolConfigText(items, entries), { encoding: 'utf8', mode: 0o600 });
+  let child;
+  try {
+    const check = spawnSync(engine, ['-t', '-f', config], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
+    if (check.status !== 0) throw new Error('节点配置未通过 Mihomo 校验');
+    child = spawn(engine, ['-f', config], { windowsHide: true, stdio: 'ignore' });
+    child.on('error', () => {});
+    for (const entry of entries) await waitForPort(entry.port, child);
+    const runtimeEntries = entries.map(entry => ({ ...entry, child, pool: true }));
+    poolRuntime = { child, directory, entries: runtimeEntries };
+    for (const entry of runtimeEntries) bridges.set(entry.appId, entry);
+    child.once('exit', () => {
+      if (poolRuntime?.child === child) poolRuntime = null;
+      for (const entry of runtimeEntries) if (bridges.get(entry.appId)?.child === child) bridges.delete(entry.appId);
+    });
+    return { bridges: runtimeEntries.map(publicBridge), failed: [] };
+  } catch (error) {
+    if (child?.pid) child.kill();
+    throw error;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 export async function stopBridgePool() {
   const poolIds = [...bridges.keys()].filter(id => id.startsWith('pool-'));
-  for (const id of poolIds) await stopBridge(id);
+  const child = poolRuntime?.child || bridges.get(poolIds[0])?.child;
+  for (const id of poolIds) bridges.delete(id);
+  if (child && child.exitCode === null) child.kill();
+  poolRuntime = null;
   return { stopped: poolIds.length };
 }
 
