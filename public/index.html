@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Proxy Dispatcher · 代理分发器</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">↗</div><div><strong>Proxy Dispatcher</strong><span>代理分发器</span></div></div>
+      <nav class="nav"><button class="nav-item active" data-view="overview"><span>◈</span>总览</button><button class="nav-item" data-view="sources"><span>↥</span>订阅源</button><button class="nav-item" data-view="proxies"><span>◌</span>节点池</button><button class="nav-item" data-view="apps"><span>▦</span>应用分配</button></nav>
+      <div class="sidebar-foot"><span class="status-dot"></span><span>本地模式 · 数据只保存在本机</span></div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><div><p class="eyebrow">WORKSPACE / ROUTING</p><h1 id="page-title">总览</h1></div><div class="top-actions"><span class="last-sync" id="last-sync">尚未导入订阅</span><button class="ghost-btn" id="clear-data">清空本地数据</button></div></header>
+      <section id="view-overview" class="view active-view">
+        <div class="hero"><div><p class="eyebrow accent">PRIVATE WORKSPACE</p><h2>把订阅节点整理成<br/><em>应用可直接使用的代理。</em></h2><p class="hero-copy">导入多个订阅链接或本地文本，统一解析节点、转换格式，再按应用分配独立代理。</p><div class="hero-actions"><button class="primary-btn" data-jump="sources">添加订阅源 <span>＋</span></button><button class="text-btn" data-jump="proxies">查看节点池 <span>→</span></button></div></div><div class="hero-orbit"><div class="orbit orbit-a"></div><div class="orbit orbit-b"></div><div class="orbit-core">PD<span>·</span></div><div class="orbit-label label-a">IMPORT</div><div class="orbit-label label-b">ASSIGN</div></div></div>
+        <div class="stat-grid"><div class="stat-card"><span>订阅源</span><strong id="stat-sources">0</strong><small>已保存的输入地址</small></div><div class="stat-card"><span>可用节点</span><strong id="stat-proxies">0</strong><small id="stat-proxies-note">等待导入</small></div><div class="stat-card"><span>已分配</span><strong id="stat-assigned">0</strong><small>个应用正在使用</small></div><div class="stat-card accent-card"><span>解析状态</span><strong id="stat-status">READY</strong><small>本地解析引擎</small></div></div>
+        <div class="split-grid"><div class="panel recent-panel"><div class="panel-head"><div><p class="eyebrow">RECENT SOURCES</p><h3>最近订阅源</h3></div><button class="icon-btn" data-jump="sources">＋</button></div><div id="recent-sources" class="empty-state"><div class="empty-icon">↥</div><p>还没有订阅源</p><small>添加链接或粘贴配置文本开始</small></div></div><div class="panel quick-panel"><div class="panel-head"><div><p class="eyebrow">QUICK GUIDE</p><h3>三步完成分配</h3></div></div><div class="guide-list"><div class="guide"><b>01</b><div><strong>导入</strong><span>订阅链接、Clash YAML 或 URI 文本</span></div></div><div class="guide"><b>02</b><div><strong>转换</strong><span>一键生成 4 种常见代理格式</span></div></div><div class="guide"><b>03</b><div><strong>分配</strong><span>为不同应用选择独立节点</span></div></div></div></div></div>
+      </section>
+      <section id="view-sources" class="view"><div class="section-head"><div><p class="eyebrow accent">INPUTS</p><h2>订阅源</h2><p>支持多个 URL、Clash 配置、Base64 节点列表和常见代理 URI。</p></div><button class="primary-btn" id="open-source-modal">添加订阅源 <span>＋</span></button></div><div id="source-list" class="source-list"></div></section>
+      <section id="view-proxies" class="view"><div class="section-head"><div><p class="eyebrow accent">NORMALIZED POOL</p><h2>节点池</h2><p>解析后的节点会去重并标准化，可复制任意一种目标格式。</p></div><div class="toolbar"><select id="format-select"><option value="hostportuserpass">hostname:port:username:password</option><option value="userpasshostport">username:password:hostname:port</option><option value="userpass-at">username:password@hostname:port</option><option value="hostport-at">hostname:port@username:password</option></select><button class="secondary-btn" id="copy-visible">复制当前列表</button></div></div><div class="filter-row"><input id="proxy-search" class="search" placeholder="搜索名称、主机或协议…"/><span id="proxy-count" class="muted"></span></div><div class="table-wrap"><table><thead><tr><th>节点</th><th>协议</th><th>地址</th><th>转换预览</th><th></th></tr></thead><tbody id="proxy-table"></tbody></table><div id="proxy-empty" class="empty-state"><div class="empty-icon">◌</div><p>节点池为空</p><small>请先导入订阅源</small></div></div></section>
+      <section id="view-apps" class="view"><div class="section-head"><div><p class="eyebrow accent">APP ROUTING</p><h2>应用分配</h2><p>给每个应用绑定一个节点，配置会自动保存在浏览器本地。</p></div><button class="primary-btn" id="add-app">新建应用 <span>＋</span></button></div><div id="app-list" class="app-grid"></div></section>
+    </main>
+  </div>
+  <div id="source-modal" class="modal hidden"><div class="modal-card"><div class="modal-head"><div><p class="eyebrow accent">NEW INPUT</p><h3>添加订阅源</h3></div><button class="close-btn" id="close-source-modal">×</button></div><label>名称<input id="source-name" placeholder="例如：主订阅 / 工作线路"/></label><label>订阅链接 <span class="label-note">可留空，直接粘贴文本</span><input id="source-url" placeholder="https://example.com/sub?..."/></label><label>或粘贴配置内容 <span class="label-note">支持 Clash YAML、Base64、URI</span><textarea id="source-content" rows="7" placeholder="ss://…&#10;vless://…&#10;或粘贴完整 Clash 配置"></textarea><div id="modal-error" class="form-error"></div><div class="modal-actions"><button class="secondary-btn" id="cancel-source">取消</button><button class="primary-btn" id="save-source">导入并解析 <span>→</span></button></div></div></div>
+  <div id="app-modal" class="modal hidden"><div class="modal-card"><div class="modal-head"><div><p class="eyebrow accent">NEW ROUTE</p><h3>新建应用</h3></div><button class="close-btn" id="close-app-modal">×</button></div><label>应用名称<input id="app-name" placeholder="例如：Chrome / ChatGPT / 采集器"/></label><label>备注 <span class="label-note">可选</span><input id="app-description" placeholder="这个应用使用独立节点"/></label><div id="app-modal-error" class="form-error"></div><div class="modal-actions"><button class="secondary-btn" id="cancel-app">取消</button><button class="primary-btn" id="save-app">创建应用 <span>→</span></button></div></div></div>
+  <div id="toast" class="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
