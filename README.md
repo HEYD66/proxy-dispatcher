@@ -17,10 +17,10 @@ npm.cmd start
 
 ## 支持的输入
 
-- Clash / 类 Clash YAML（`proxies:` 节点）
+- Clash / 类 Clash YAML（`proxies:` 节点，支持多行和 `- {name: ..., server: ..., type: ...}` 行内对象）
 - JSON 中的 `proxies` / `outbounds`
 - Base64 编码的 URI 列表
 - `ss://`、`vmess://`、`vless://`、`trojan://`、`http(s)://`、`socks5://`
 - 截图中的四种 `host:port:user:pass` 变体
 
-解析是本地启发式解析器；复杂的供应商私有格式需要先转换为上述格式。
+URL 来源支持“重新解析”以抓取最新节点；粘贴型来源保留当前导入结果。解析是本地启发式解析器；复杂的供应商私有格式需要先转换为上述格式。
