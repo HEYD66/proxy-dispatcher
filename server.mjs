@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startBridge, stopBridge, listBridges, checkBridge } from './bridge.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = join(root, 'public');
@@ -12,6 +13,12 @@ const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=u
 function send(res, status, body, type = 'application/json; charset=utf-8') {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
+}
+
+async function readJson(req) {
+  let body = '';
+  for await (const chunk of req) { body += chunk; if (body.length > 20000) throw new Error('请求过大'); }
+  return JSON.parse(body || '{}');
 }
 
 async function fetchSubscription(url) {
@@ -37,6 +44,10 @@ const server = http.createServer(async (req, res) => {
       if (result.status < 200 || result.status >= 300) return send(res, 502, { error: `订阅返回 HTTP ${result.status}`, ...result });
       return send(res, 200, result);
     }
+    if (requestUrl.pathname === '/api/bridges' && req.method === 'GET') return send(res, 200, { bridges: listBridges() });
+    if (requestUrl.pathname === '/api/bridge/start' && req.method === 'POST') return send(res, 200, await startBridge(await readJson(req)));
+    if (requestUrl.pathname === '/api/bridge/stop' && req.method === 'POST') return send(res, 200, await stopBridge((await readJson(req)).appId));
+    if (requestUrl.pathname === '/api/bridge/check' && req.method === 'POST') return send(res, 200, await checkBridge((await readJson(req)).appId));
     const pathname = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname;
     const file = normalize(join(publicDir, pathname));
     if (!file.startsWith(publicDir) || !existsSync(file)) return send(res, 404, { error: 'Not found' });
