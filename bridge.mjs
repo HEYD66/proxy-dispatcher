@@ -32,13 +32,13 @@ function validate(input) {
 }
 
 function configText(line, name, port, username, password) {
-  return `mixed-port: ${port}\nallow-lan: false\nbind-address: 127.0.0.1\nmode: rule\nlog-level: warning\nauthentication:\n  - ${JSON.stringify(`${username}:${password}`)}\nproxies:\n  ${line}\nproxy-groups:\n  - name: ROUTE\n    type: select\n    proxies:\n      - ${JSON.stringify(name)}\nrules:\n  - MATCH,ROUTE\n`;
+  return `mixed-port: ${port}\nallow-lan: false\nbind-address: 127.0.0.1\nmode: rule\nlog-level: warning\nipv6: false\ndns:\n  enable: true\n  ipv6: false\n  enhanced-mode: redir-host\n  use-hosts: false\n  use-system-hosts: false\n  default-nameserver:\n    - 223.5.5.5\n    - 8.8.8.8\n  nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\n  proxy-server-nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\nauthentication:\n  - ${JSON.stringify(`${username}:${password}`)}\nproxies:\n  ${line}\nproxy-groups:\n  - name: ROUTE\n    type: select\n    proxies:\n      - ${JSON.stringify(name)}\nrules:\n  - MATCH,ROUTE\n`;
 }
 
 function poolConfigText(items, entries) {
   const proxies = items.map(item => `  ${item.rawLine.trim()}`).join('\n');
   const listeners = entries.map(entry => `  - name: ${JSON.stringify(entry.listenerName)}\n    type: mixed\n    port: ${entry.port}\n    listen: 127.0.0.1\n    proxy: ${JSON.stringify(entry.name)}\n    users:\n      - username: ${JSON.stringify(entry.username)}\n        password: ${JSON.stringify(entry.password)}`).join('\n');
-  return `allow-lan: false\nbind-address: 127.0.0.1\nmode: rule\nlog-level: warning\nproxies:\n${proxies}\nlisteners:\n${listeners}\nrules:\n  - MATCH,DIRECT\n`;
+  return `allow-lan: false\nbind-address: 127.0.0.1\nmode: rule\nlog-level: warning\nipv6: false\ndns:\n  enable: true\n  ipv6: false\n  enhanced-mode: redir-host\n  use-hosts: false\n  use-system-hosts: false\n  default-nameserver:\n    - 223.5.5.5\n    - 8.8.8.8\n  nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\n  proxy-server-nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\nproxies:\n${proxies}\nlisteners:\n${listeners}\nrules:\n  - MATCH,DIRECT\n`;
 }
 
 async function waitForPort(port, child) {
