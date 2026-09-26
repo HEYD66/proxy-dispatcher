@@ -4,7 +4,7 @@ import { performance } from 'node:perf_hooks';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 
-const ipUrl = 'https://api64.ipify.org?format=json';
+const ipUrls = ['https://api64.ipify.org?format=json', 'https://api.ipify.org?format=json'];
 const latencyUrl = 'https://speed.cloudflare.com/__down?bytes=0';
 const downloadBytes = 2_000_000;
 const downloadUrl = `https://speed.cloudflare.com/__down?bytes=${downloadBytes}`;
@@ -73,8 +73,8 @@ function requestViaProxy(url, agent, limit, timeoutMs) {
   });
 }
 
-async function lookupIp(agent) {
-  const response = await requestViaProxy(ipUrl, agent, 4096, 15000);
+async function lookupIp(agent, url) {
+  const response = await requestViaProxy(url, agent, 4096, 15000);
   let ip;
   try { ip = JSON.parse(response.body).ip; } catch { throw new Error('出口 IP 服务返回内容无效'); }
   if (typeof ip !== 'string' || !isIP(ip)) throw new Error('出口 IP 服务未返回有效地址');
@@ -82,12 +82,15 @@ async function lookupIp(agent) {
 }
 
 async function lookupIpWithStartupRetry(agent) {
-  try { return await lookupIp(agent); }
-  catch (error) {
-    if (!['ECONNRESET', 'ECONNREFUSED', 'EPIPE'].includes(error.code)) throw error;
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    return lookupIp(agent);
+  let lastError;
+  for (const url of ipUrls) {
+    try { return await lookupIp(agent, url); }
+    catch (error) { lastError = error; }
   }
+  const error = new Error('两个出口 IP 服务均未返回有效结果');
+  error.code = lastError?.code;
+  error.cause = lastError;
+  throw error;
 }
 
 export async function probeProxy(proxy, bridge, kind) {

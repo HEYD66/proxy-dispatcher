@@ -136,6 +136,7 @@ body{background:var(--bg);color:var(--text)}
 .proxy-card.is-active{border:1px solid #3989e9;padding:12px 13px}
 .proxy-card-probe{min-height:23px;color:#62e48a}
 .proxy-card-probe .probe-result{font-size:11px;color:#62e48a}
+.proxy-card-probe .probe-result.probe-error,.proxy-card-head .probe-result.probe-error{color:#ff9b9b}
 .probe-empty{color:#8f93a5}
 .proxy-card-head .pill{background:#303b52;color:#9bc6ff;border-radius:4px}
 .proxy-card-origin{color:#a5a8b8}

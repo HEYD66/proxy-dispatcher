@@ -14,7 +14,7 @@ const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=u
 let activeProbes = 0;
 
 function probeError(error, proxy, bridge) {
-  if (error?.code === 'ECONNRESET') return '上游节点主动断开连接（ECONNRESET），请重试或更换节点';
+  if (error?.code === 'ECONNRESET') return '代理链路连接被重置（ECONNRESET）；可能是上游节点、网络或探测目标，请先点“连通性”区分';
   if (error?.code === 'ECONNREFUSED') return '代理端口拒绝连接（ECONNREFUSED），请重新启用节点';
   if (error?.code === 'ETIMEDOUT') return '代理连接超时，请检查节点状态或更换节点';
   let message = String(error?.message || '代理探测失败');
@@ -83,7 +83,18 @@ const server = http.createServer(async (req, res) => {
       const bridge = bridges.find(item => item.appId === `pool-${id}`) || bridges.find(item => state.apps.some(app => app.id === item.appId && app.proxyId === id));
       activeProbes++;
       try { return send(res, 200, await probeProxy(proxy, bridge, kind)); }
-      catch (error) { return send(res, 502, { error: probeError(error, proxy, bridge) }); }
+      catch (error) {
+        let message = probeError(error, proxy, bridge);
+        if (bridge) {
+          try {
+            const check = await checkBridge(bridge.appId);
+            if (!check.localPortOpen) message = '本地代理端口未运行，请重新启用节点';
+            else if (!check.upstreamReachable) message = '本地端口正常，但节点连通性未通过' + (check.status ? '（HTTP ' + check.status + '）' : '') + '；请检查节点配置或更换节点';
+            else if (error?.code === 'ECONNRESET') message = '节点基本连通，但出口 IP 探测连接被重置；请稍后重试或换用测速检查';
+          } catch { /* Keep the original probe error when the follow-up check fails. */ }
+        }
+        return send(res, 502, { error: message });
+      }
       finally { activeProbes--; }
     }
     if (requestUrl.pathname === '/api/bridge/pool/start' && req.method === 'POST') return send(res, 200, await startBridgePool((await readJson(req)).items));

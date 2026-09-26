@@ -74,8 +74,8 @@ async function checkNodeBridge(id){try{const result=await bridgeRequest('/api/br
 const probingNodes = new Set();
 const selectedProbeIds = new Set();
 const probeBridgeFor = p => bridgeFor(`pool-${p.id}`) || state.bridges.find(b => state.apps.some(a => a.id === b.appId && a.proxyId === p.id));
-function probeSummary(p){const r=p.lastProbe;if(!r)return '';const pieces=[];if(r.ip)pieces.push(`<span>IP ${esc(r.ip)}</span>`);if(Number.isFinite(r.latencyMs))pieces.push(`<span>${Math.round(r.latencyMs)} ms</span>`);if(Number.isFinite(r.downloadMbps))pieces.push(`<span>${r.downloadMbps.toFixed(2)} Mbps</span>`);if(!pieces.length)return '';const date=r.checkedAt?new Date(r.checkedAt).toLocaleString('zh-CN'):'';return `<span class="probe-result" title="检测时间：${esc(date)}">${pieces.join('')}</span>`;}
-async function runNodeProbe(id,kind){if(probingNodes.has(id))return;const p=state.proxies.find(item=>item.id===id);if(!p)return;probingNodes.add(id);renderProxies();try{const result=await bridgeRequest('/api/proxy/probe',{id,kind});p.lastProbe={...(p.lastProbe||{}),...result};await save();toast(kind==='ip'?`出口 IP：${result.ip}`:`下载约 2 MB：${result.downloadMbps.toFixed(2)} Mbps · ${result.latencyMs} ms`);}catch(error){toast(`探测失败：${error.message}`);}finally{probingNodes.delete(id);renderProxies();}}
+function probeSummary(p){const r=p.lastProbe;if(!r)return '';const date=r.checkedAt?new Date(r.checkedAt).toLocaleString('zh-CN'):'';if(r.error)return `<span class="probe-result probe-error" title="检测时间：${esc(date)}">失败：${esc(r.error)}</span>`;const pieces=[];if(r.ip)pieces.push(`<span>IP ${esc(r.ip)}</span>`);if(Number.isFinite(r.latencyMs))pieces.push(`<span>${Math.round(r.latencyMs)} ms</span>`);if(Number.isFinite(r.downloadMbps))pieces.push(`<span>${r.downloadMbps.toFixed(2)} Mbps</span>`);if(!pieces.length)return '';return `<span class="probe-result" title="检测时间：${esc(date)}">${pieces.join('')}</span>`;}
+async function runNodeProbe(id,kind){if(probingNodes.has(id))return;const p=state.proxies.find(item=>item.id===id);if(!p)return;probingNodes.add(id);renderProxies();try{const result=await bridgeRequest('/api/proxy/probe',{id,kind});p.lastProbe=result;await save().catch(()=>{});toast(kind==='ip'?`出口 IP：${result.ip}`:`下载约 2 MB：${result.downloadMbps.toFixed(2)} Mbps · ${result.latencyMs} ms`);}catch(error){p.lastProbe={error:error.message,checkedAt:new Date().toISOString()};await save().catch(()=>{});toast(`探测失败：${error.message}`);}finally{probingNodes.delete(id);renderProxies();}}
 async function runSelectedProbes(kind){
   const rows=filteredProxies();
   const selected=rows.filter(p=>selectedProbeIds.has(p.id));
@@ -86,7 +86,7 @@ async function runSelectedProbes(kind){
   eligible.forEach(p=>probingNodes.add(p.id));
   renderProxies();
   let cursor=0,success=0,failed=0;
-  const worker=async()=>{while(cursor<eligible.length){const p=eligible[cursor++];try{p.lastProbe={...(p.lastProbe||{}),...(await bridgeRequest('/api/proxy/probe',{id:p.id,kind}))};success++;}catch{failed++;}finally{probingNodes.delete(p.id);renderProxies();}}};
+  const worker=async()=>{while(cursor<eligible.length){const p=eligible[cursor++];try{p.lastProbe=await bridgeRequest('/api/proxy/probe',{id:p.id,kind});success++;}catch(error){p.lastProbe={error:error.message,checkedAt:new Date().toISOString()};failed++;}finally{probingNodes.delete(p.id);renderProxies();}}};
   await Promise.all(Array.from({length:Math.min(3,eligible.length)},worker));
   try{await save();}catch{}
   const suffix=skipped?`，跳过 ${skipped} 个未启用节点`:'';
