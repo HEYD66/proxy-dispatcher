@@ -16,6 +16,7 @@ const maxActive = Number.isInteger(requestedLimit) ? Math.min(500, Math.max(1, r
 const active = new Map();
 let runtime = null;
 let queue = Promise.resolve();
+let coreLogSink = () => {};
 const serialized = job => { const result = queue.then(job); queue = result.catch(() => {}); return result; };
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -63,6 +64,9 @@ async function portOpen(port) {
 async function stopRuntime() {
   const old = runtime; runtime = null;
   if (!old) return;
+  old.closed = true;
+  for (const stream of old.streams || []) stream.destroy();
+  for (const timer of old.timers || []) clearTimeout(timer);
   if (old.child.exitCode === null) {
     const exit = new Promise(resolve => old.child.once('exit', resolve));
     old.child.kill();
@@ -75,9 +79,11 @@ async function launch(entries) {
   if (!entries.length) return null;
   const directory = await mkdtemp(join(tmpdir(), 'proxy-dispatcher-'));
   const config = join(directory, 'config.yaml');
+  const controller = { port: await freePort(new Set(entries.map(entry => entry.port))), secret: randomBytes(32).toString('hex') };
   let child;
   try {
-    await writeFile(config, configText(entries), { encoding: 'utf8', mode: 0o600 });
+    const controllerConfig = `external-controller: 127.0.0.1:${controller.port}\nsecret: ${JSON.stringify(controller.secret)}\n`;
+    await writeFile(config, controllerConfig + configText(entries), { encoding: 'utf8', mode: 0o600 });
     const checked = spawnSync(engine, ['-t', '-f', config], { windowsHide: true, encoding: 'utf8', timeout: 30000 });
     if (checked.error || checked.status !== 0) throw new Error('节点配置未通过 Mihomo 校验');
     child = spawn(engine, ['-f', config], { windowsHide: true, stdio: 'ignore' });
@@ -91,12 +97,71 @@ async function launch(entries) {
       }
       if (!ready) throw new Error(`端口 ${entry.port} 未就绪`);
     }
-    return { child, directory };
+    const session = { child, directory, controller, closed: false, streams: [], timers: [], traffic: null, memory: null };
+    watchCore(session, '/traffic', data => {
+      if (Number.isFinite(data.up) && Number.isFinite(data.down)) session.traffic = {
+        up: data.up, down: data.down, upTotal: data.upTotal, downTotal: data.downTotal, at: Date.now()
+      };
+    });
+    watchCore(session, '/memory', data => {
+      if (Number.isFinite(data.inuse)) session.memory = { inuse: data.inuse, at: Date.now() };
+    });
+    watchCore(session, '/logs?level=warning', data => {
+      if (['warning', 'error'].includes(data.type) && typeof data.payload === 'string') coreLogSink(data.type, data.payload);
+    });
+    return session;
   } catch (error) {
     if (child?.pid) child.kill();
     await rm(directory, { recursive: true, force: true });
     throw error;
   }
+}
+
+function watchCore(session, path, onData) {
+  const connect = () => {
+    if (session.closed || session.child.exitCode !== null) return;
+    const request = http.get({
+      host: '127.0.0.1', port: session.controller.port, path,
+      headers: { Authorization: `Bearer ${session.controller.secret}` },
+      timeout: 5000
+    }, response => {
+      if (response.statusCode !== 200) { response.resume(); request.destroy(); return; }
+      session.streams.push(response);
+      let buffer = '';
+      response.setTimeout(0);
+      response.on('data', chunk => {
+        buffer += chunk.toString('utf8');
+        if (buffer.length > 65536) buffer = '';
+        let boundary;
+        while ((boundary = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, boundary).trim();
+          buffer = buffer.slice(boundary + 1);
+          if (line) { try { onData(JSON.parse(line)); } catch { /* Ignore malformed core frames. */ } }
+        }
+      });
+      response.on('close', () => { session.streams = session.streams.filter(item => item !== response); });
+    });
+    session.streams.push(request);
+    request.on('timeout', () => request.destroy());
+    request.on('error', () => {});
+    request.on('close', () => {
+      session.streams = session.streams.filter(item => item !== request);
+      if (!session.closed) session.timers.push(setTimeout(connect, 1000));
+    });
+  };
+  connect();
+}
+
+export const setCoreLogSink = sink => { coreLogSink = sink; };
+export function getTelemetry() {
+  const running = Boolean(runtime && runtime.child.exitCode === null);
+  const current = running ? runtime : null;
+  const recent = sample => sample && Date.now() - sample.at < 5000 ? sample : null;
+  return {
+    running, activeListeners: running ? active.size : 0,
+    traffic: recent(current?.traffic), memory: recent(current?.memory),
+    pid: current?.child.pid || null
+  };
 }
 
 async function persist(entries) {

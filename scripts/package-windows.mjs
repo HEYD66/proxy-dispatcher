@@ -21,7 +21,7 @@ if (existsSync(output)) {
 await cp(source, output, { recursive: true });
 const appDir = join(output, 'resources', 'app');
 await mkdir(appDir, { recursive: true });
-for (const name of ['electron-main.mjs', 'server.mjs', 'shared-bridge.mjs', 'store.mjs', 'proxy-probe.mjs', 'README.md']) {
+for (const name of ['electron-main.mjs', 'server.mjs', 'shared-bridge.mjs', 'event-log.mjs', 'store.mjs', 'proxy-probe.mjs', 'README.md']) {
   await cp(join(root, name), join(appDir, name));
 }
 await cp(join(root, 'public'), join(appDir, 'public'), { recursive: true });

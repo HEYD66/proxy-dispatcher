@@ -3,15 +3,17 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startBridge, stopBridge, listBridges, checkBridge, startBridgePool, stopBridgePool, stopAllBridges, restoreBridges, shutdownBridges } from './shared-bridge.mjs';
+import { startBridge, stopBridge, listBridges, checkBridge, startBridgePool, stopBridgePool, stopAllBridges, restoreBridges, shutdownBridges, getTelemetry, setCoreLogSink } from './shared-bridge.mjs';
 import { loadState, saveState } from './store.mjs';
 import { probeProxy } from './proxy-probe.mjs';
+import { logEvent, readEvents } from './event-log.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = join(root, 'public');
 const port = Number(process.env.PORT || 4173);
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8' };
 let activeProbes = 0;
+setCoreLogSink((level, message) => logEvent(level, 'Mihomo', message));
 
 function probeError(error, proxy, bridge) {
   if (error?.code === 'ECONNRESET') return '代理链路连接被重置（ECONNRESET）；可能是上游节点、网络或探测目标，请先点“连通性”区分';
@@ -61,17 +63,32 @@ const server = http.createServer(async (req, res) => {
     }
     if (requestUrl.pathname === '/api/state' && req.method === 'GET') return send(res, 200, await loadState());
     if (requestUrl.pathname === '/api/state' && req.method === 'PUT') return send(res, 200, await saveState(await readJson(req)));
+    if (requestUrl.pathname === '/api/telemetry' && req.method === 'GET') return send(res, 200, getTelemetry());
+    if (requestUrl.pathname === '/api/logs' && req.method === 'GET') return send(res, 200, { events: await readEvents(requestUrl.searchParams.get('limit')) });
     if (requestUrl.pathname === '/api/fetch') {
       const target = requestUrl.searchParams.get('url');
       if (!target) return send(res, 400, { error: '缺少 url 参数' });
       const result = await fetchSubscription(target);
+      await logEvent(result.status >= 200 && result.status < 300 ? 'info' : 'warning', '订阅', `订阅请求返回 HTTP ${result.status}`);
       if (result.status < 200 || result.status >= 300) return send(res, 502, { error: `订阅返回 HTTP ${result.status}`, ...result });
       return send(res, 200, result);
     }
     if (requestUrl.pathname === '/api/bridges' && req.method === 'GET') return send(res, 200, { bridges: listBridges() });
-    if (requestUrl.pathname === '/api/bridge/start' && req.method === 'POST') return send(res, 200, await startBridge(await readJson(req)));
-    if (requestUrl.pathname === '/api/bridge/stop' && req.method === 'POST') return send(res, 200, await stopBridge((await readJson(req)).appId));
-    if (requestUrl.pathname === '/api/bridge/check' && req.method === 'POST') return send(res, 200, await checkBridge((await readJson(req)).appId));
+    if (requestUrl.pathname === '/api/bridge/start' && req.method === 'POST') {
+      const result = await startBridge(await readJson(req));
+      await logEvent('info', '代理', '已启用一个应用代理端口');
+      return send(res, 200, result);
+    }
+    if (requestUrl.pathname === '/api/bridge/stop' && req.method === 'POST') {
+      const result = await stopBridge((await readJson(req)).appId);
+      if (result.stopped) await logEvent('info', '代理', '已停用一个应用代理端口');
+      return send(res, 200, result);
+    }
+    if (requestUrl.pathname === '/api/bridge/check' && req.method === 'POST') {
+      const result = await checkBridge((await readJson(req)).appId);
+      await logEvent(result.upstreamReachable ? 'info' : 'warning', '连通性', result.upstreamReachable ? '节点连通性通过' : '节点连通性未通过');
+      return send(res, 200, result);
+    }
     if (requestUrl.pathname === '/api/proxy/probe' && req.method === 'POST') {
       const { id, kind } = await readJson(req);
       if (typeof id !== 'string' || id.length > 100 || !['ip', 'speed'].includes(kind)) return send(res, 400, { error: '探测参数无效' });
@@ -79,10 +96,15 @@ const server = http.createServer(async (req, res) => {
       const state = await loadState();
       const proxy = state.proxies.find(item => item.id === id);
       if (!proxy) return send(res, 404, { error: '节点不存在' });
+      const nodeNumber = state.proxies.indexOf(proxy) + 1;
       const bridges = listBridges();
       const bridge = bridges.find(item => item.appId === `pool-${id}`) || bridges.find(item => state.apps.some(app => app.id === item.appId && app.proxyId === id));
       activeProbes++;
-      try { return send(res, 200, await probeProxy(proxy, bridge, kind)); }
+      try {
+        const result = await probeProxy(proxy, bridge, kind);
+        await logEvent('info', '检测', `第 ${nodeNumber} 个节点${kind === 'ip' ? '出口 IP 检测' : '测速'}成功`);
+        return send(res, 200, result);
+      }
       catch (error) {
         let message = probeError(error, proxy, bridge);
         if (bridge) {
@@ -93,13 +115,26 @@ const server = http.createServer(async (req, res) => {
             else if (error?.code === 'ECONNRESET') message = '节点基本连通，但出口 IP 探测连接被重置；请稍后重试或换用测速检查';
           } catch { /* Keep the original probe error when the follow-up check fails. */ }
         }
+        await logEvent('warning', '检测', `第 ${nodeNumber} 个节点${kind === 'ip' ? '出口 IP 检测' : '测速'}失败：${message}`);
         return send(res, 502, { error: message });
       }
       finally { activeProbes--; }
     }
-    if (requestUrl.pathname === '/api/bridge/pool/start' && req.method === 'POST') return send(res, 200, await startBridgePool((await readJson(req)).items));
-    if (requestUrl.pathname === '/api/bridge/pool/stop' && req.method === 'POST') return send(res, 200, await stopBridgePool());
-    if (requestUrl.pathname === '/api/bridge/stop-all' && req.method === 'POST') return send(res, 200, await stopAllBridges());
+    if (requestUrl.pathname === '/api/bridge/pool/start' && req.method === 'POST') {
+      const result = await startBridgePool((await readJson(req)).items);
+      await logEvent('info', '代理', `共享内核代理池已启用 ${result.bridges.length} 个端口`);
+      return send(res, 200, result);
+    }
+    if (requestUrl.pathname === '/api/bridge/pool/stop' && req.method === 'POST') {
+      const result = await stopBridgePool();
+      await logEvent('info', '代理', `代理池已停用 ${result.stopped} 个端口`);
+      return send(res, 200, result);
+    }
+    if (requestUrl.pathname === '/api/bridge/stop-all' && req.method === 'POST') {
+      const result = await stopAllBridges();
+      await logEvent('warning', '代理', `已停用全部 ${result.stopped} 个端口`);
+      return send(res, 200, result);
+    }
     const pathname = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname;
     const file = normalize(join(publicDir, pathname));
     if (!file.startsWith(publicDir) || !existsSync(file)) return send(res, 404, { error: 'Not found' });
@@ -107,6 +142,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
     res.end(data);
   } catch (error) {
+    if (req.url?.startsWith('/api/') && !req.url.startsWith('/api/logs') && !req.url.startsWith('/api/telemetry')) logEvent('error', '服务', `请求失败：${error?.code || error?.name || 'Error'}`);
     send(res, 500, { error: error.name === 'AbortError' ? '订阅请求超时' : error.message });
   }
 });
@@ -114,8 +150,10 @@ const server = http.createServer(async (req, res) => {
 try {
   const restored = await restoreBridges();
   if (restored.restored) console.log(`Restored ${restored.restored} active listeners in one Mihomo process`);
+  await logEvent('info', '启动', `本机服务启动，恢复 ${restored.restored} 个代理端口`);
 } catch (error) {
   console.error(`Active listener restore failed: ${error.message}`);
+  await logEvent('error', '启动', '活动代理端口恢复失败');
 }
 server.listen(port, '127.0.0.1', () => console.log(`Proxy Dispatcher running at http://127.0.0.1:${port}`));
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
