@@ -91,3 +91,62 @@
   .bulk-spacer{display:none}
   .compact-btn{flex:1}
 }
+
+/* Clash Verge inspired shell: compact dark sidebar, blue selection and denser cards. */
+:root{--bg:#20212b;--panel:#292a36;--panel-2:#303140;--line:#3b3d4d;--text:#f4f5fb;--muted:#a9adbd;--accent:#2d8cff;--accent-2:#7caeff;--danger:#ff777d}
+body{background:var(--bg);color:var(--text)}
+.app-shell{background:var(--bg)}
+.sidebar{width:228px;background:#2c2d3d;border-right:1px solid #414250;padding:24px 14px 18px}
+.brand{padding:0 10px 34px;gap:10px;min-width:0}
+.brand-mark{width:38px;height:38px;border-radius:12px;background:#f4f5fb;border:0;color:#2d8cff;font-size:23px;box-shadow:0 5px 18px rgba(0,0,0,.18)}
+.brand-copy{min-width:0}
+.brand strong{font-size:17px;line-height:1.1;white-space:nowrap}
+.brand span{font-size:11px;color:#bec2d1}
+.brand-new{margin-left:auto;border:0;border-radius:8px;background:#ff4d55;color:#fff;padding:7px 9px;font-size:11px;cursor:pointer;white-space:nowrap}
+.brand-new:hover{filter:brightness(1.08)}
+.nav{gap:7px}
+.nav-item{padding:13px 14px;border-radius:10px;color:#d0d2dc;font-size:15px;gap:13px}
+.nav-item span{width:19px;font-size:18px;color:#d8dbe5}
+.nav-item:hover{background:#363746;color:#fff}
+.nav-item.active{background:#2d5d94;color:#fff;box-shadow:none}
+.nav-item.active span{color:#fff}
+.sidebar-foot{color:#969bad;padding:0 10px;font-size:10px}
+.status-dot{background:#55d878;box-shadow:0 0 10px rgba(85,216,120,.75)}
+.main{width:calc(100% - 228px);max-width:none;padding:24px 30px 44px}
+.topbar{margin-bottom:24px}
+.topbar h1{font-size:30px}
+.eyebrow{color:#9aa0b3}
+.accent{color:#72aaff}
+.ghost-btn{background:#2a2b38;border-color:#4a4c5e;color:#d6d8e2}
+.section-head{margin-bottom:18px}
+.section-head h2{font-size:30px}
+.section-head>div>p:last-child{color:#b2b5c3}
+.toolbar select,select{background:#20212b;border-color:#4a4c5e}
+.primary-btn{background:#2d8cff;color:#fff}
+.secondary-btn{background:#30313f;border-color:#4a4c5e;color:#f0f1f7}
+.secondary-btn:hover{background:#3a3c4e}
+.proxy-bulkbar{background:#2c2d3d;border-color:#454758;border-radius:9px}
+.check-label{font-size:12px;color:#f2f3f8}
+.compact-btn{background:#303b52;border-color:#4e6389}
+.filter-row{margin-bottom:10px}
+.search{background:#272834;border-color:#484a5b}
+.proxy-grid{gap:9px}
+.proxy-card{background:#292a36;border:0;border-radius:10px;padding:13px 14px;box-shadow:0 2px 0 rgba(0,0,0,.08)}
+.proxy-card:hover{background:#30313f;border-color:transparent}
+.proxy-card.is-active{border:1px solid #3989e9;padding:12px 13px}
+.proxy-card-probe{min-height:23px;color:#62e48a}
+.proxy-card-probe .probe-result{font-size:11px;color:#62e48a}
+.probe-empty{color:#8f93a5}
+.proxy-card-head .pill{background:#303b52;color:#9bc6ff;border-radius:4px}
+.proxy-card-origin{color:#a5a8b8}
+.proxy-card-endpoint{color:#d0d2dc}
+.proxy-card-preview{background:#20212b;color:#aeb2c1}
+.proxy-card .node-actions .copy-btn{background:#252a35;border:1px solid #526077;border-radius:6px;color:#c4ff73;padding:5px 8px}
+.proxy-card .node-actions .copy-btn:hover{background:#34415a}
+.stat-card,.panel,.source-card,.app-card{background:#292a36;border-color:#414354}
+.stat-card.accent-card strong{color:#61a9ff}
+.modal-card{background:#2b2c39;border-color:#4a4c5d}
+.modal-card input,.modal-card textarea{background:#20212b;border-color:#484a5b}
+.toast{background:#d7eaff;color:#102341}
+@media(max-width:900px){.sidebar{width:78px}.brand{justify-content:center;padding-left:0;padding-right:0}.brand-copy,.brand-new{display:none}.main{width:calc(100% - 78px)}}
+@media(max-width:760px){.sidebar{width:64px}.main{width:calc(100% - 64px)}}
