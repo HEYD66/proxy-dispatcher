@@ -69,22 +69,22 @@ function requestViaProxy(url, agent, limit, timeoutMs) {
       }));
     });
     request.once('error', finish);
-    timer = setTimeout(() => request.destroy(new Error('探测超时')), timeoutMs);
+    timer = setTimeout(() => { finish(new Error('探测超时')); request.destroy(); }, timeoutMs);
   });
 }
 
-async function lookupIp(agent, url) {
-  const response = await requestViaProxy(url, agent, 4096, 15000);
+async function lookupIp(agent, url, timeoutMs) {
+  const response = await requestViaProxy(url, agent, 4096, timeoutMs);
   let ip;
   try { ip = JSON.parse(response.body).ip; } catch { throw new Error('出口 IP 服务返回内容无效'); }
   if (typeof ip !== 'string' || !isIP(ip)) throw new Error('出口 IP 服务未返回有效地址');
   return { ip, latencyMs: Math.round(response.latencyMs) };
 }
 
-async function lookupIpWithStartupRetry(agent) {
+async function lookupIpWithStartupRetry(agent, timeoutMs) {
   let lastError;
   for (const url of ipUrls) {
-    try { return await lookupIp(agent, url); }
+    try { return await lookupIp(agent, url, timeoutMs); }
     catch (error) { lastError = error; }
   }
   const error = new Error('两个出口 IP 服务均未返回有效结果');
@@ -93,16 +93,16 @@ async function lookupIpWithStartupRetry(agent) {
   throw error;
 }
 
-export async function probeProxy(proxy, bridge, kind) {
+export async function probeProxy(proxy, bridge, kind, timeoutMs = 15000) {
   if (!['ip', 'speed'].includes(kind)) throw new Error('未知探测类型');
   const agent = proxyAgent(proxy, bridge);
   try {
     if (kind === 'ip') {
-      return { ...await lookupIpWithStartupRetry(agent), checkedAt: new Date().toISOString() };
+      return { ...await lookupIpWithStartupRetry(agent, timeoutMs), checkedAt: new Date().toISOString() };
     }
-    const { ip } = await lookupIpWithStartupRetry(agent);
-    const latency = await requestViaProxy(latencyUrl, agent, 4096, 15000);
-    const download = await requestViaProxy(downloadUrl, agent, downloadBytes + 65536, 25000);
+    const { ip } = await lookupIpWithStartupRetry(agent, timeoutMs);
+    const latency = await requestViaProxy(latencyUrl, agent, 4096, timeoutMs);
+    const download = await requestViaProxy(downloadUrl, agent, downloadBytes + 65536, Math.max(timeoutMs, 25000));
     if (download.bytes < downloadBytes) throw new Error('下载测速数据不完整');
     return {
       ip,

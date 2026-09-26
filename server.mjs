@@ -1,19 +1,50 @@
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { extname, join, normalize } from 'node:path';
+import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startBridge, stopBridge, listBridges, checkBridge, startBridgePool, stopBridgePool, stopAllBridges, restoreBridges, shutdownBridges, getTelemetry, setCoreLogSink } from './shared-bridge.mjs';
-import { loadState, saveState } from './store.mjs';
+import { spawnSync } from 'node:child_process';
+import { startBridge, stopBridge, listBridges, checkBridge, startBridgePool, stopBridgePool, stopAllBridges, restoreBridges, shutdownBridges, getTelemetry, setCoreLogSink, setCoreLogLevel, getBridgeSnapshot, validateBridgeSnapshot, restoreBridgeSnapshot, restartBridges } from './shared-bridge.mjs';
+import { loadState, saveState, validateState } from './store.mjs';
 import { probeProxy } from './proxy-probe.mjs';
-import { logEvent, readEvents } from './event-log.mjs';
+import { logEvent, readEvents, setLogRetentionDays, pruneOldEvents } from './event-log.mjs';
+import { loadSettings, saveSettings, validateSettings, settingsFile } from './settings-store.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = join(root, 'public');
 const port = Number(process.env.PORT || 4173);
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8' };
 let activeProbes = 0;
+let currentSettings;
+try { currentSettings = await loadSettings(); }
+catch (error) { console.error('设置读取失败，使用默认值:', error.message); currentSettings = validateSettings({}); }
+setCoreLogLevel(currentSettings.coreLogLevel);
+setLogRetentionDays(currentSettings.logRetentionDays);
 setCoreLogSink((level, message) => logEvent(level, 'Mihomo', message));
+const desktopRequests = new Map();
+let desktopRequestId = 0;
+process.on('message', message => {
+  if (message?.type !== 'settings-applied') return;
+  const pending = desktopRequests.get(message.requestId);
+  if (!pending) return;
+  desktopRequests.delete(message.requestId);
+  clearTimeout(pending.timer);
+  if (message.error) pending.reject(new Error(message.error));
+  else pending.resolve();
+});
+
+function applyDesktopSettings(next) {
+  if (!process.send) {
+    if (next.autoStart !== currentSettings.autoStart || next.closeBehavior !== currentSettings.closeBehavior) throw new Error('开机自启和托盘设置仅桌面版可用');
+    return Promise.resolve();
+  }
+  const requestId = ++desktopRequestId;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { desktopRequests.delete(requestId); reject(new Error('桌面设置同步超时')); }, 5000);
+    desktopRequests.set(requestId, { resolve, reject, timer });
+    process.send({ type: 'apply-settings', requestId, settings: next });
+  });
+}
 
 function probeError(error, proxy, bridge) {
   if (error?.code === 'ECONNRESET') return '代理链路连接被重置（ECONNRESET）；可能是上游节点、网络或探测目标，请先点“连通性”区分';
@@ -63,6 +94,59 @@ const server = http.createServer(async (req, res) => {
     }
     if (requestUrl.pathname === '/api/state' && req.method === 'GET') return send(res, 200, await loadState());
     if (requestUrl.pathname === '/api/state' && req.method === 'PUT') return send(res, 200, await saveState(await readJson(req)));
+    if (requestUrl.pathname === '/api/settings' && req.method === 'GET') {
+      const core = process.env.MIHOMO_PATH || (process.platform === 'win32' ? join(root, 'vendor', 'mihomo', 'mihomo.exe') : 'mihomo');
+      const version = spawnSync(core, ['-v'], { windowsHide: true, encoding: 'utf8', timeout: 3000 });
+      return send(res, 200, {
+        settings: currentSettings,
+        desktopAvailable: Boolean(process.send),
+        coreVersion: (version.stdout || '').trim().split(/\r?\n/)[0] || '无法读取',
+        dataDirectory: dirname(settingsFile),
+        logFile: join(dirname(settingsFile), 'events.jsonl'),
+        runtime: getTelemetry()
+      });
+    }
+    if (requestUrl.pathname === '/api/settings' && req.method === 'PUT') {
+      const next = validateSettings({ ...currentSettings, ...await readJson(req) });
+      const previous = currentSettings;
+      await applyDesktopSettings(next);
+      try { await saveSettings(next); }
+      catch (error) { await applyDesktopSettings(previous).catch(() => {}); throw error; }
+      currentSettings = next;
+      setCoreLogLevel(next.coreLogLevel);
+      setLogRetentionDays(next.logRetentionDays);
+      let retentionWarning = null;
+      if (next.logRetentionDays) {
+        try { await pruneOldEvents(); }
+        catch (error) { retentionWarning = '设置已保存，但旧日志清理失败；下次启动会重试'; console.error('旧日志清理失败:', error.message); }
+      }
+      await logEvent('info', '设置', '设置已保存');
+      return send(res, 200, { settings: next, pendingCoreRestart: getTelemetry().coreLogLevel !== next.coreLogLevel, retentionWarning });
+    }
+    if (requestUrl.pathname === '/api/backup' && req.method === 'GET') {
+      return send(res, 200, { type: 'proxy-dispatcher-backup', version: 1, createdAt: new Date().toISOString(), state: await loadState(), activeBridges: getBridgeSnapshot() });
+    }
+    if (requestUrl.pathname === '/api/backup/restore' && req.method === 'POST') {
+      const backup = await readJson(req);
+      if (backup?.type !== 'proxy-dispatcher-backup' || backup.version !== 1) return send(res, 400, { error: '不是受支持的代理分发器备份文件' });
+      const nextState = validateState(backup.state);
+      const nextBridges = validateBridgeSnapshot(backup.activeBridges);
+      const previousState = await loadState();
+      const previousBridges = getBridgeSnapshot();
+      const safetyDir = join(dirname(settingsFile), 'restore-backups');
+      await mkdir(safetyDir, { recursive: true });
+      const safetyFile = join(safetyDir, `before-restore-${Date.now()}.json`);
+      await writeFile(safetyFile, JSON.stringify({ type: 'proxy-dispatcher-backup', version: 1, createdAt: new Date().toISOString(), state: previousState, activeBridges: previousBridges }), { encoding: 'utf8', mode: 0o600 });
+      await restoreBridgeSnapshot(nextBridges);
+      try { await saveState(nextState); }
+      catch (error) {
+        await restoreBridgeSnapshot(previousBridges).catch(restoreError => console.error('恢复旧端口失败:', restoreError.message));
+        await saveState(previousState).catch(restoreError => console.error('恢复旧状态失败:', restoreError.message));
+        throw error;
+      }
+      await logEvent('warning', '数据', `已从备份恢复 ${nextState.sources.length} 个订阅、${nextState.proxies.length} 个节点和 ${nextBridges.length} 个端口`);
+      return send(res, 200, { restored: true, sources: nextState.sources.length, proxies: nextState.proxies.length, activeListeners: nextBridges.length, safetyFile });
+    }
     if (requestUrl.pathname === '/api/telemetry' && req.method === 'GET') return send(res, 200, getTelemetry());
     if (requestUrl.pathname === '/api/logs' && req.method === 'GET') return send(res, 200, { events: await readEvents(requestUrl.searchParams.get('limit')) });
     if (requestUrl.pathname === '/api/fetch') {
@@ -101,7 +185,7 @@ const server = http.createServer(async (req, res) => {
       const bridge = bridges.find(item => item.appId === `pool-${id}`) || bridges.find(item => state.apps.some(app => app.id === item.appId && app.proxyId === id));
       activeProbes++;
       try {
-        const result = await probeProxy(proxy, bridge, kind);
+        const result = await probeProxy(proxy, bridge, kind, currentSettings.probeTimeoutSeconds * 1000);
         await logEvent('info', '检测', `第 ${nodeNumber} 个节点${kind === 'ip' ? '出口 IP 检测' : '测速'}成功`);
         return send(res, 200, result);
       }
@@ -130,6 +214,11 @@ const server = http.createServer(async (req, res) => {
       await logEvent('info', '代理', `代理池已停用 ${result.stopped} 个端口`);
       return send(res, 200, result);
     }
+    if (requestUrl.pathname === '/api/bridge/restart' && req.method === 'POST') {
+      const result = await restartBridges();
+      await logEvent('warning', '代理', `共享内核已重启，恢复 ${result.restarted} 个端口`);
+      return send(res, 200, result);
+    }
     if (requestUrl.pathname === '/api/bridge/stop-all' && req.method === 'POST') {
       const result = await stopAllBridges();
       await logEvent('warning', '代理', `已停用全部 ${result.stopped} 个端口`);
@@ -148,14 +237,17 @@ const server = http.createServer(async (req, res) => {
 });
 
 try {
-  const restored = await restoreBridges();
+  if (currentSettings.logRetentionDays) await pruneOldEvents();
+  const restored = currentSettings.restoreOnLaunch ? await restoreBridges() : { restored: 0 };
   if (restored.restored) console.log(`Restored ${restored.restored} active listeners in one Mihomo process`);
-  await logEvent('info', '启动', `本机服务启动，恢复 ${restored.restored} 个代理端口`);
+  await logEvent('info', '启动', currentSettings.restoreOnLaunch ? `本机服务启动，恢复 ${restored.restored} 个代理端口` : '本机服务启动，已跳过活动端口恢复');
 } catch (error) {
   console.error(`Active listener restore failed: ${error.message}`);
   await logEvent('error', '启动', '活动代理端口恢复失败');
 }
 server.listen(port, '127.0.0.1', () => console.log(`Proxy Dispatcher running at http://127.0.0.1:${port}`));
+const retentionTimer = setInterval(() => { if (currentSettings.logRetentionDays) pruneOldEvents().catch(() => {}); }, 86400000);
+retentionTimer.unref();
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
   server.close();
   await shutdownBridges();

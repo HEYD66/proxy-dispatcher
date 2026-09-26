@@ -19,6 +19,7 @@ function normalize(data) {
   if (data.sources.length > 1000 || data.proxies.length > 100000 || data.apps.length > 10000) throw new Error('保存的数据超过限制');
   return { version: 1, sources: data.sources, proxies: data.proxies, apps: data.apps };
 }
+export const validateState = normalize;
 
 export function saveState(data) {
   const snapshot = normalize(data);

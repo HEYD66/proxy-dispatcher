@@ -1,8 +1,10 @@
-import { appendFile, mkdir, readFile, rename, stat } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 
 const file = process.env.EVENT_LOG_FILE || join(dirname(process.env.STATE_FILE || join(process.cwd(), 'data', 'state.json')), 'events.jsonl');
 let writeQueue = Promise.resolve();
+let retentionDays = 0;
+export const setLogRetentionDays = days => { retentionDays = days; };
 
 function safeMessage(value) {
   return String(value)
@@ -40,4 +42,36 @@ export async function readEvents(limit = 200) {
   catch (error) { if (error.code === 'ENOENT') return []; throw error; }
   const lines = text.trim().split('\n').slice(-Math.min(500, Math.max(1, Number(limit) || 200)));
   return lines.flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } }).reverse();
+}
+
+export function pruneOldEvents() {
+  const operation = writeQueue.then(async () => {
+    if (!retentionDays) return { removed: 0 };
+    const cutoff = Date.now() - retentionDays * 86400000;
+    let removed = 0;
+    const folder = dirname(file);
+    const prefix = `${basename(file)}.`;
+    for (const name of await readdir(folder).catch(error => error.code === 'ENOENT' ? [] : Promise.reject(error))) {
+      if (!name.startsWith(prefix) || !name.endsWith('.archive')) continue;
+      const path = join(folder, name);
+      if ((await stat(path)).mtimeMs < cutoff) { await rm(path); removed++; }
+    }
+    let contents;
+    try { contents = await readFile(file, 'utf8'); }
+    catch (error) { if (error.code === 'ENOENT') return { removed }; throw error; }
+    const lines = contents.split('\n').filter(Boolean);
+    const kept = lines.filter(line => {
+      try { const time = Date.parse(JSON.parse(line).time); return !Number.isFinite(time) || time >= cutoff; }
+      catch { return true; }
+    });
+    removed += lines.length - kept.length;
+    if (kept.length !== lines.length) {
+      const temporary = `${file}.${process.pid}.tmp`;
+      await writeFile(temporary, kept.length ? kept.join('\n') + '\n' : '', { encoding: 'utf8', mode: 0o600 });
+      await rename(temporary, file);
+    }
+    return { removed };
+  });
+  writeQueue = operation.catch(error => console.error('日志保留清理失败:', error.message));
+  return operation;
 }

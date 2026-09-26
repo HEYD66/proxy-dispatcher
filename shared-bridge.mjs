@@ -17,6 +17,7 @@ const active = new Map();
 let runtime = null;
 let queue = Promise.resolve();
 let coreLogSink = () => {};
+let coreLogLevel = 'warning';
 const serialized = job => { const result = queue.then(job); queue = result.catch(() => {}); return result; };
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -52,6 +53,10 @@ function configText(entries) {
   return `allow-lan: false\nbind-address: 127.0.0.1\nmode: rule\nlog-level: warning\nipv6: true\ndns:\n  enable: true\n  ipv6: true\n  enhanced-mode: redir-host\n  use-hosts: false\n  use-system-hosts: false\n  default-nameserver:\n    - 223.5.5.5\n    - 8.8.8.8\n  nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\n  proxy-server-nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\nproxies:\n${proxies}\nlisteners:\n${listeners}\nrules:\n  - MATCH,DIRECT\n`;
 }
 
+function configuredText(entries) {
+  return configText(entries).replace('log-level: warning', `log-level: ${coreLogLevel}`);
+}
+
 async function portOpen(port) {
   return new Promise(resolve => {
     const socket = net.connect(port, '127.0.0.1');
@@ -83,7 +88,7 @@ async function launch(entries) {
   let child;
   try {
     const controllerConfig = `external-controller: 127.0.0.1:${controller.port}\nsecret: ${JSON.stringify(controller.secret)}\n`;
-    await writeFile(config, controllerConfig + configText(entries), { encoding: 'utf8', mode: 0o600 });
+    await writeFile(config, controllerConfig + configuredText(entries), { encoding: 'utf8', mode: 0o600 });
     const checked = spawnSync(engine, ['-t', '-f', config], { windowsHide: true, encoding: 'utf8', timeout: 30000 });
     if (checked.error || checked.status !== 0) throw new Error('节点配置未通过 Mihomo 校验');
     child = spawn(engine, ['-f', config], { windowsHide: true, stdio: 'ignore' });
@@ -97,7 +102,7 @@ async function launch(entries) {
       }
       if (!ready) throw new Error(`端口 ${entry.port} 未就绪`);
     }
-    const session = { child, directory, controller, closed: false, streams: [], timers: [], traffic: null, memory: null };
+    const session = { child, directory, controller, logLevel: coreLogLevel, closed: false, streams: [], timers: [], traffic: null, memory: null };
     watchCore(session, '/traffic', data => {
       if (Number.isFinite(data.up) && Number.isFinite(data.down)) session.traffic = {
         up: data.up, down: data.down, upTotal: data.upTotal, downTotal: data.downTotal, at: Date.now()
@@ -106,8 +111,8 @@ async function launch(entries) {
     watchCore(session, '/memory', data => {
       if (Number.isFinite(data.inuse)) session.memory = { inuse: data.inuse, at: Date.now() };
     });
-    watchCore(session, '/logs?level=warning', data => {
-      if (['warning', 'error'].includes(data.type) && typeof data.payload === 'string') coreLogSink(data.type, data.payload);
+    watchCore(session, `/logs?level=${session.logLevel}`, data => {
+      if (['info', 'warning', 'error'].includes(data.type) && typeof data.payload === 'string') coreLogSink(data.type, data.payload);
     });
     return session;
   } catch (error) {
@@ -153,6 +158,10 @@ function watchCore(session, path, onData) {
 }
 
 export const setCoreLogSink = sink => { coreLogSink = sink; };
+export const setCoreLogLevel = level => {
+  if (!['error', 'warning', 'info'].includes(level)) throw new Error('内核日志级别无效');
+  coreLogLevel = level;
+};
 export function getTelemetry() {
   const running = Boolean(runtime && runtime.child.exitCode === null);
   const current = running ? runtime : null;
@@ -160,7 +169,9 @@ export function getTelemetry() {
   return {
     running, activeListeners: running ? active.size : 0,
     traffic: recent(current?.traffic), memory: recent(current?.memory),
-    pid: current?.child.pid || null
+    pid: current?.child.pid || null,
+    coreLogLevel: current?.logLevel || coreLogLevel,
+    pendingCoreLogLevel: coreLogLevel
   };
 }
 
@@ -180,7 +191,7 @@ async function replace(next) {
     const directory = await mkdtemp(join(tmpdir(), 'proxy-dispatcher-check-'));
     try {
       const config = join(directory, 'config.yaml');
-      await writeFile(config, configText(entries), { encoding: 'utf8', mode: 0o600 });
+      await writeFile(config, configuredText(entries), { encoding: 'utf8', mode: 0o600 });
       const checked = spawnSync(engine, ['-t', '-f', config], { windowsHide: true, encoding: 'utf8', timeout: 30000 });
       if (checked.error || checked.status !== 0) throw new Error('节点配置未通过 Mihomo 校验');
     } finally { await rm(directory, { recursive: true, force: true }); }
@@ -202,6 +213,35 @@ async function replace(next) {
 
 const publicBridge = entry => ({ appId: entry.appId, name: entry.name, port: entry.port, username: entry.username, password: entry.password, pid: runtime?.child.pid ?? null, running: Boolean(runtime && runtime.child.exitCode === null) });
 export const listBridges = () => [...active.values()].map(publicBridge);
+export const getBridgeSnapshot = () => [...active.values()].map(entry => ({ ...entry }));
+
+export function validateBridgeSnapshot(entries) {
+  if (!Array.isArray(entries) || entries.length > maxActive) throw new Error('备份中的活动端口数量无效');
+  const ids = new Set();
+  const ports = new Set();
+  return entries.map(entry => {
+    const fields = validate(entry);
+    if (!Number.isInteger(entry.port) || entry.port < 1 || entry.port > 65535 || ports.has(entry.port)) throw new Error('备份中的端口无效或重复');
+    for (const value of [entry.username, entry.password]) {
+      if (typeof value !== 'string' || !value || value.length > 128 || /[\r\n\x00-\x1f]/.test(value)) throw new Error('备份中的代理认证信息无效');
+    }
+    if (ids.has(fields.appId)) throw new Error('备份中的应用标识重复');
+    ids.add(fields.appId);
+    ports.add(entry.port);
+    return { ...fields, port: entry.port, username: entry.username, password: entry.password };
+  });
+}
+
+export const restoreBridgeSnapshot = entries => serialized(async () => {
+  const validated = validateBridgeSnapshot(entries);
+  await replace(new Map(validated.map(entry => [entry.appId, entry])));
+  return { restored: validated.length };
+});
+export const restartBridges = () => serialized(async () => {
+  const count = active.size;
+  if (count) await replace(new Map(active));
+  return { restarted: count };
+});
 
 export function startBridge(input) {
   return serialized(async () => {
@@ -263,12 +303,7 @@ export function restoreBridges() {
     if (!existsSync(activeFile)) return { restored: 0 };
     const data = JSON.parse(await readFile(activeFile, 'utf8'));
     if (!Array.isArray(data.entries)) throw new Error('活动节点存档格式错误');
-    const entries = data.entries.map(entry => {
-      validate(entry);
-      if (!Number.isInteger(entry.port) || entry.port < 1 || entry.port > 65535 || !entry.username || !entry.password) throw new Error('活动端口存档无效');
-      return entry;
-    });
-    if (entries.length > maxActive) throw new Error('已保存的活动节点超过限制');
+    const entries = validateBridgeSnapshot(data.entries);
     runtime = await launch(entries);
     for (const entry of entries) active.set(entry.appId, entry);
     return { restored: entries.length };

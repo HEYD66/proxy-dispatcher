@@ -1,0 +1,19 @@
+.settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.settings-panel{min-width:0;padding:17px 19px;background:#292a36;border:1px solid #414354;border-radius:10px}
+.settings-panel h3{font-size:15px;margin:0 0 7px;padding-bottom:12px;border-bottom:1px solid #414354}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:15px;min-height:66px;padding:10px 0;border-bottom:1px solid #393b4b}
+.setting-row:last-child{border-bottom:0}
+.setting-row>span:first-child{min-width:0;flex:1}
+.setting-row strong{display:block;font-size:12px;font-weight:600}
+.setting-row small{display:block;margin-top:5px;color:#a4a9bb;font-size:10px;line-height:1.45;overflow-wrap:anywhere}
+.setting-row select{flex:0 0 auto;max-width:48%;min-width:115px;padding:8px}
+.setting-row input[type=checkbox]{width:19px;height:19px;flex:0 0 auto;accent-color:#2d8cff;cursor:pointer}
+.setting-row .secondary-btn{flex:0 0 auto;white-space:nowrap;padding:8px 10px;font-size:10px}
+.setting-value{flex:0 0 auto;color:#8dc1ff;font-size:11px;white-space:nowrap}
+.settings-warning{margin:16px 0 10px;color:#e7bd77;font-size:11px;line-height:1.5}
+.settings-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+.settings-actions .secondary-btn{font-size:11px;padding:9px 11px}
+.settings-feedback{min-height:20px;margin:14px 2px;color:#a7c9ff;font-size:12px}
+.settings-feedback.error{color:#ff9b9b}
+@media(max-width:1050px){.settings-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.settings-panel{padding:13px}.setting-row{gap:8px}.setting-row select{min-width:105px}}

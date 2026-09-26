@@ -7,12 +7,13 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/probe.css" />
   <link rel="stylesheet" href="/layout.css" />
+  <link rel="stylesheet" href="/settings.css" />
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand"><div class="brand-mark">↗</div><div class="brand-copy"><strong>Proxy Dispatcher</strong><span>代理分发器</span></div></div>
-      <nav class="nav"><button class="nav-item active" data-view="overview"><span>◈</span>总览</button><button class="nav-item" data-view="sources"><span>↥</span>订阅源</button><button class="nav-item" data-view="proxies"><span>◌</span>节点池</button><button class="nav-item" data-view="apps"><span>▦</span>应用分配</button><button class="nav-item" data-view="logs"><span>≡</span>日志</button></nav>
+      <nav class="nav"><button class="nav-item active" data-view="overview"><span>◈</span>总览</button><button class="nav-item" data-view="sources"><span>↥</span>订阅源</button><button class="nav-item" data-view="proxies"><span>◌</span>节点池</button><button class="nav-item" data-view="apps"><span>▦</span>应用分配</button><button class="nav-item" data-view="logs"><span>≡</span>日志</button><button class="nav-item" data-view="settings"><span>⚙</span>设置</button></nav>
       <div class="sidebar-telemetry" aria-label="共享内核实时统计">
         <svg class="traffic-sparkline" viewBox="0 0 180 46" preserveAspectRatio="none" role="img" aria-label="最近一分钟上下行速率"><polyline id="spark-up" points=""></polyline><polyline id="spark-down" points=""></polyline></svg>
         <div class="telemetry-row up"><span>↑</span><strong id="sidebar-up">—</strong><small id="sidebar-up-unit">KB/s</small></div>
@@ -33,6 +34,34 @@
       <section id="view-proxies" class="view"><div class="section-head"><div><p class="eyebrow accent">NORMALIZED POOL</p><h2>节点池</h2><p>每个节点独立启用、复制和检测。勾选节点后，可批量查询出口 IP；测速仍按需执行，每次约下载 2 MB。</p></div><div class="toolbar"><select id="format-select"><option value="hostportuserpass">hostname:port:username:password</option><option value="userpasshostport">username:password:hostname:port</option><option value="userpass-at">username:password@hostname:port</option><option value="hostport-at">hostname:port@username:password</option></select><button class="secondary-btn" id="copy-visible">复制可直接代理</button><button class="secondary-btn" id="pool-start">启用筛选节点</button><button class="secondary-btn" id="pool-stop">停用全部节点</button></div></div><div class="proxy-bulkbar"><label class="check-label"><input type="checkbox" id="select-all-proxies"/> <span>全选当前</span></label><span id="selected-proxy-count" class="muted">已选 0 个</span><span class="bulk-spacer"></span><label class="probe-concurrency-label" title="同时检测的节点数；测速每节点约下载 2 MB">并发 <select id="probe-concurrency" aria-label="批量检测并发数"><option value="3">3</option><option value="5" selected>5</option><option value="8">8</option></select></label><button class="secondary-btn compact-btn" id="probe-selected-ip">一键查 IP</button><button class="secondary-btn compact-btn" id="probe-selected-speed">批量测速</button></div><div class="filter-row"><input id="proxy-search" class="search" placeholder="搜索名称、主机或协议…"/><span id="proxy-count" class="muted"></span></div><div class="proxy-list-wrap"><div id="proxy-grid" class="proxy-groups"></div><div id="proxy-empty" class="empty-state"><div class="empty-icon">◌</div><p>节点池为空</p><small>请先导入订阅源</small></div></div></section>
       <section id="view-apps" class="view"><div class="section-head"><div><p class="eyebrow accent">APP ROUTING</p><h2>应用分配</h2><p>给每个应用绑定一个节点，配置会保存在本机服务端。</p></div><button class="primary-btn" id="add-app">新建应用 <span>＋</span></button></div><div id="app-list" class="app-grid"></div></section>
       <section id="view-logs" class="view"><div class="section-head"><div><p class="eyebrow accent">ACTIVITY</p><h2>日志</h2><p>记录订阅请求、代理启停、节点检测及共享内核警告。日志保存在本机。</p></div><button class="secondary-btn" id="refresh-logs">刷新日志</button></div><div class="log-toolbar"><label>级别 <select id="log-level"><option value="all">全部</option><option value="info">信息</option><option value="warning">警告</option><option value="error">错误</option></select></label><span id="log-count" class="muted"></span></div><div id="log-list" class="log-list" aria-live="polite"><div class="log-empty">正在读取日志…</div></div></section>
+      <section id="view-settings" class="view">
+        <div class="section-head"><div><p class="eyebrow accent">PREFERENCES</p><h2>设置</h2><p>仅管理代理分发器自己的进程、检测和数据，不修改系统代理或其他 Clash 配置。</p></div><button class="primary-btn" id="save-settings">保存设置</button></div>
+        <div class="settings-grid">
+          <div class="settings-panel"><h3>启动与窗口</h3>
+            <label class="setting-row"><span><strong>启动时恢复端口</strong><small>下次启动生效；关闭后保留端口记录，启动时按需恢复。</small></span><input type="checkbox" id="setting-restore" /></label>
+            <label class="setting-row"><span><strong>关闭窗口</strong><small>选择托盘时，代理在后台继续运行；托盘菜单可彻底退出。</small></span><select id="setting-close"><option value="quit">退出并停止代理</option><option value="tray">留在托盘继续运行</option></select></label>
+            <label class="setting-row"><span><strong>开机自启</strong><small>仅 Windows 打包版可用；便携目录移动后需要重新设置。</small></span><input type="checkbox" id="setting-autostart" /></label>
+            <label class="setting-row"><span><strong>启动页面</strong><small>打开程序时首先显示的页面。</small></span><select id="setting-page"><option value="overview">总览</option><option value="sources">订阅源</option><option value="proxies">节点池</option><option value="apps">应用分配</option><option value="logs">日志</option><option value="settings">设置</option></select></label>
+          </div>
+          <div class="settings-panel"><h3>节点检测</h3>
+            <label class="setting-row"><span><strong>默认并发数</strong><small>节点池内仍可临时改动；最多同时检测 8 个节点。</small></span><select id="setting-concurrency"><option value="3">3 个</option><option value="5">5 个</option><option value="8">8 个</option></select></label>
+            <label class="setting-row"><span><strong>单次请求超时</strong><small>两个出口 IP 服务依次尝试；测速下载至少等待 25 秒。</small></span><select id="setting-timeout"><option value="10">10 秒</option><option value="15">15 秒</option><option value="20">20 秒</option><option value="30">30 秒</option><option value="60">60 秒</option></select></label>
+          </div>
+          <div class="settings-panel"><h3>日志</h3>
+            <label class="setting-row"><span><strong>内核日志级别</strong><small>修改后可手动重启共享内核应用，现有连接会短暂中断。</small></span><select id="setting-log-level"><option value="error">错误</option><option value="warning">警告</option><option value="info">信息</option></select></label>
+            <label class="setting-row"><span><strong>保留时间</strong><small>选择期限后会清理更早的本机事件和归档；默认永久保留。</small></span><select id="setting-retention"><option value="0">永久保留</option><option value="7">7 天</option><option value="30">30 天</option><option value="90">90 天</option></select></label>
+            <div class="setting-row"><span><strong>当前内核级别</strong><small id="setting-active-log-level">读取中…</small></span><button class="secondary-btn" id="restart-core">重启内核应用</button></div>
+          </div>
+          <div class="settings-panel"><h3>数据与运行信息</h3>
+            <div class="setting-row"><span><strong>共享内核</strong><small id="setting-core-version">读取中…</small></span><span class="setting-value" id="setting-active-ports">— 个端口</span></div>
+            <div class="setting-row"><span><strong>数据目录</strong><small id="setting-data-path">读取中…</small></span><button class="secondary-btn" id="copy-data-path">复制路径</button></div>
+            <div class="setting-row"><span><strong>日志文件</strong><small id="setting-log-path">读取中…</small></span><button class="secondary-btn" id="copy-log-path">复制路径</button></div>
+            <p class="settings-warning">备份文件包含订阅签名链接、节点及本地端口凭据，请妥善保管。恢复会重建共享内核，已有连接会断开；设置和日志不包含在备份内。</p>
+            <div class="settings-actions"><button class="secondary-btn" id="export-backup">导出数据备份</button><button class="secondary-btn" id="import-backup">从备份恢复</button><input type="file" id="backup-file" accept=".json,application/json" hidden /></div>
+          </div>
+        </div>
+        <p class="settings-feedback" id="settings-feedback" aria-live="polite"></p>
+      </section>
     </main>
   </div>
   <div id="source-modal" class="modal hidden"><div class="modal-card"><div class="modal-head"><div><p class="eyebrow accent" id="source-modal-kicker">NEW INPUT</p><h3 id="source-modal-title">添加订阅源</h3></div><button class="close-btn" id="close-source-modal">×</button></div><label>名称<input id="source-name" placeholder="例如：主订阅 / 工作线路"/></label><label>订阅链接 <span class="label-note" id="source-url-note">可留空，直接粘贴文本</span><textarea id="source-url" rows="3" placeholder="每行一个订阅链接：https://example.com/sub?..."></textarea></label><label>或粘贴配置内容 <span class="label-note" id="source-content-note">支持 Clash YAML、Base64、URI</span><textarea id="source-content" rows="7" placeholder="ss://…&#10;vless://…&#10;或粘贴完整 Clash 配置"></textarea><div id="modal-error" class="form-error"></div><div class="modal-actions"><button class="secondary-btn" id="cancel-source">取消</button><button class="primary-btn" id="save-source">导入并解析 <span>→</span></button></div></div></div>
@@ -42,5 +71,6 @@
   <script src="/app.js"></script>
   <script src="/source-editor.js"></script>
   <script src="/telemetry.js"></script>
+  <script src="/settings.js"></script>
 </body>
 </html>
