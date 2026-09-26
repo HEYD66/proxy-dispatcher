@@ -120,10 +120,10 @@ async function createWindow() {
   const origin = `http://127.0.0.1:${backendPort}`;
   window = new BrowserWindow({
     title: '代理分发器',
-    width: 1280,
-    height: 820,
-    minWidth: 960,
-    minHeight: 640,
+    width: 1180,
+    height: 760,
+    minWidth: 900,
+    minHeight: 600,
     show: false,
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true }
   });
