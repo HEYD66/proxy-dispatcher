@@ -1,0 +1,6 @@
+.node-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:210px}
+.node-actions .copy-btn{white-space:nowrap;border:1px solid #354356;border-radius:6px;padding:6px 8px;line-height:1.25}
+.node-actions .copy-btn:hover{background:#243322;border-color:#6d9450}
+.node-actions .copy-btn:disabled{opacity:.5;cursor:wait}
+.probe-result{display:block;margin-top:7px;color:#b7f36b;font:11px ui-monospace,monospace;white-space:normal;overflow-wrap:anywhere}
+.probe-result small{display:block;margin-top:3px;color:#8f9bab;font:10px ui-sans-serif,system-ui,sans-serif}

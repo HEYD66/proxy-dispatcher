@@ -5,11 +5,21 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startBridge, stopBridge, listBridges, checkBridge, startBridgePool, stopBridgePool, stopAllBridges, restoreBridges, shutdownBridges } from './shared-bridge.mjs';
 import { loadState, saveState } from './store.mjs';
+import { probeProxy } from './proxy-probe.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = join(root, 'public');
 const port = Number(process.env.PORT || 4173);
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8' };
+let activeProbes = 0;
+
+function probeError(error, proxy, bridge) {
+  let message = String(error?.message || '代理探测失败');
+  for (const secret of [proxy?.username, proxy?.password, bridge?.username, bridge?.password].filter(Boolean)) {
+    message = message.replaceAll(secret, '[已隐藏]').replaceAll(encodeURIComponent(secret), '[已隐藏]');
+  }
+  return message.slice(0, 240);
+}
 
 function send(res, status, body, type = 'application/json; charset=utf-8') {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
@@ -59,6 +69,20 @@ const server = http.createServer(async (req, res) => {
     if (requestUrl.pathname === '/api/bridge/start' && req.method === 'POST') return send(res, 200, await startBridge(await readJson(req)));
     if (requestUrl.pathname === '/api/bridge/stop' && req.method === 'POST') return send(res, 200, await stopBridge((await readJson(req)).appId));
     if (requestUrl.pathname === '/api/bridge/check' && req.method === 'POST') return send(res, 200, await checkBridge((await readJson(req)).appId));
+    if (requestUrl.pathname === '/api/proxy/probe' && req.method === 'POST') {
+      const { id, kind } = await readJson(req);
+      if (typeof id !== 'string' || id.length > 100 || !['ip', 'speed'].includes(kind)) return send(res, 400, { error: '探测参数无效' });
+      if (activeProbes >= 3) return send(res, 429, { error: '同时最多测试 3 个节点' });
+      const state = await loadState();
+      const proxy = state.proxies.find(item => item.id === id);
+      if (!proxy) return send(res, 404, { error: '节点不存在' });
+      const bridges = listBridges();
+      const bridge = bridges.find(item => item.appId === `pool-${id}`) || bridges.find(item => state.apps.some(app => app.id === item.appId && app.proxyId === id));
+      activeProbes++;
+      try { return send(res, 200, await probeProxy(proxy, bridge, kind)); }
+      catch (error) { return send(res, 502, { error: probeError(error, proxy, bridge) }); }
+      finally { activeProbes--; }
+    }
     if (requestUrl.pathname === '/api/bridge/pool/start' && req.method === 'POST') return send(res, 200, await startBridgePool((await readJson(req)).items));
     if (requestUrl.pathname === '/api/bridge/pool/stop' && req.method === 'POST') return send(res, 200, await stopBridgePool());
     if (requestUrl.pathname === '/api/bridge/stop-all' && req.method === 'POST') return send(res, 200, await stopAllBridges());
