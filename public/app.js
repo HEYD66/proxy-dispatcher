@@ -10,6 +10,7 @@ const bridgeable = (p) => Boolean(p && bridgeProtocols.has(p.protocol));
 const hasCredentials = (p) => Boolean(String(p?.username||'').trim() && String(p?.password||'').trim());
 const directExportable = (p) => Boolean(p?.server && p?.port && hasCredentials(p) && ['http','https','socks','socks5'].includes(p.protocol));
 const nativeProbeable = (p) => Boolean(p?.server && p?.port && ['http','https','socks','socks5'].includes(p.protocol));
+const isSubscriptionNotice = p => /^(剩余流量|套餐到期|到期时间|距离下次重置|建议每天更新|如果很少节点可用|流量剩余|官网|更新订阅)/i.test(String(p?.name || '').trim());
 const bridgeFor = (appId) => state.bridges.find(b => b.appId === appId);
 async function bridgeRequest(path, payload){ const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const data=await response.json(); if(!response.ok) throw new Error(data.error||'本地代理操作失败'); return data; }
 async function reloadBridges(){const response=await fetch('/api/bridges');if(!response.ok)throw new Error('读取活动端口失败');state.bridges=(await response.json()).bridges;renderAll();}
@@ -17,7 +18,7 @@ async function stopMissingBridges(){try{for(const b of state.bridges){const keep
 async function startAppBridge(appId){ const app=state.apps.find(a=>a.id===appId); const proxy=state.proxies.find(p=>p.id===app?.proxyId); if(!app||!proxy)return toast('请先选择节点'); if(!bridgeable(proxy))return toast('HTTP/SOCKS 节点可直接复制，无需本地转换'); if(!proxy.rawLine)return toast('此节点是旧数据，请先在订阅源页面点击重新解析'); try{ const bridge=await bridgeRequest('/api/bridge/start',{appId,name:proxy.name,rawLine:proxy.rawLine}); await reloadBridges(); toast(`已启动本地代理 127.0.0.1:${bridge.port}`); }catch(e){toast(e.message);} }
 async function stopAppBridge(appId){ try{await bridgeRequest('/api/bridge/stop',{appId});await reloadBridges();toast('本地代理已停止');}catch(e){toast(e.message);} }
 function formatBridge(b, format=state.format){ return formatProxy({server:'127.0.0.1',port:b.port,username:b.username,password:b.password},format); }
-async function startProxyPool(){ const nodes=filteredProxies().filter(p=>bridgeable(p)&&p.rawLine); if(!nodes.length)return toast('当前没有可转换的协议节点，请先重新解析订阅'); const button=$('#pool-start');if(button){button.disabled=true;button.textContent='批量启用中…';} try{const result=await bridgeRequest('/api/bridge/pool/start',{items:nodes.map(p=>({id:p.id,name:p.name,rawLine:p.rawLine}))});await reloadBridges();const copied=await copyText(result.bridges.map(b=>formatBridge(b)).join('\n'));toast(`已启用 ${result.bridges.length} 个本地端口${copied?'，已复制代理行':'；复制失败，请逐条复制'}。使用前请测试出口`);}catch(e){toast(e.message);}finally{if(button){button.disabled=false;button.textContent='启用筛选节点';}} }
+async function startProxyPool(){ const nodes=filteredProxies().filter(p=>!isSubscriptionNotice(p)&&bridgeable(p)&&p.rawLine); if(!nodes.length)return toast('当前没有可转换的协议节点，请先重新解析订阅'); const button=$('#pool-start');if(button){button.disabled=true;button.textContent='批量启用中…';} try{const result=await bridgeRequest('/api/bridge/pool/start',{items:nodes.map(p=>({id:p.id,name:p.name,rawLine:p.rawLine}))});await reloadBridges();const copied=await copyText(result.bridges.map(b=>formatBridge(b)).join('\n'));toast(`已启用 ${result.bridges.length} 个本地端口${copied?'，已复制代理行':'；复制失败，请逐条复制'}。使用前请测试出口`);}catch(e){toast(e.message);}finally{if(button){button.disabled=false;button.textContent='启用筛选节点';}} }
 async function stopProxyPool(){try{const result=await bridgeRequest('/api/bridge/pool/stop',{});await reloadBridges();toast(`已停止 ${result.stopped} 个本地端口`);}catch(e){toast(e.message);}}
 function go(view){ document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active-view',el.id===`view-${view}`)); document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.view===view)); }
 document.querySelectorAll('.nav-item').forEach(el=>el.addEventListener('click',()=>go(el.dataset.view))); document.querySelectorAll('[data-jump]').forEach(el=>el.addEventListener('click',()=>go(el.dataset.jump)));
@@ -64,7 +65,25 @@ function parseYaml(text,source,list){if(!window.jsyaml)return false;try{const do
 function parseContent(content, source){const list=[];let text=String(content||'').trim().replace(/^\uFEFF/,'');if(!text)return list;try{const obj=JSON.parse(text);const arr=obj.proxies||obj.outbounds||obj;if(Array.isArray(arr))arr.forEach(p=>addConfiguredProxy(p,source,list));else if(obj.server)addConfiguredProxy(obj,source,list);}catch{}if(!list.length&&/(^|\n)\s*proxies\s*:/i.test(text))parseYaml(text,source,list);if(!list.length){const decoded=decodeBase64(text);if(decoded&&decoded!==text&&(decoded.includes('://')||decoded.includes('proxies:')))return parseContent(decoded,source);text.split(/\r?\n|\s*,\s*/).forEach(line=>parseLoose(line,source,list));}return list;}
 function formatProxy(p, format=state.format){ const u=p.username||'', pw=p.password||'', h=p.server, port=p.port; if(format==='userpasshostport') return `${u}:${pw}:${h}:${port}`; if(format==='userpass-at') return `${u}:${pw}@${h}:${port}`; if(format==='hostport-at') return `${h}:${port}@${u}:${pw}`; return `${h}:${port}:${u}:${pw}`; }
 async function importSource(){const name=$('#source-name').value.trim()||`订阅 ${state.sources.length+1}`;const urls=$('#source-url').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);const pasted=$('#source-content').value.trim();$('#modal-error').textContent='';if(!urls.length&&!pasted){$('#modal-error').textContent='请输入订阅链接或配置内容';return;}const button=$('#save-source');button.disabled=true;button.textContent='导入中…';let imported=0;let nodes=0;const failures=[];const failedUrls=[];async function addOne(label,url,content){const source={id:uid(),name:label,url:url||'本地粘贴',createdAt:new Date().toISOString()};const parsed=parseContent(content,source);if(!parsed.length)throw new Error('没有识别到节点');state.sources.unshift({...source,nodeCount:parsed.length});mergeParsed(source,parsed);imported++;nodes+=parsed.length;}try{for(let i=0;i<urls.length;i++){try{const response=await fetch(`/api/fetch?url=${encodeURIComponent(urls[i])}`);const data=await response.json();if(!response.ok)throw new Error(data.error||'订阅请求失败');await addOne(urls.length>1?`${name} ${i+1}`:name,urls[i],data.text);}catch(error){failures.push(`第 ${i+1} 条：${error.message}`);failedUrls.push(urls[i]);}}if(pasted){try{await addOne(urls.length?`${name} 本地`:name,'',pasted);}catch(error){failures.push(`粘贴内容：${error.message}`);}}if(imported)await save();if(failures.length){$('#source-url').value=failedUrls.join('\n');if(imported)$('#source-content').value='';$('#modal-error').textContent=`成功 ${imported} 条、失败 ${failures.length} 条；${failures.slice(0,2).join('；')}`;}else{closeModal();go('sources');toast(`已导入 ${imported} 个来源、${nodes} 个节点`);}}catch(error){$('#modal-error').textContent=error.message;}finally{button.disabled=false;button.innerHTML='导入并解析 <span>→</span>';}}
-function renderOverview(){ $('#stat-sources').textContent=state.sources.length; $('#stat-proxies').textContent=state.proxies.length; $('#stat-proxies-note').textContent=state.proxies.length?'已去重的可用节点':'等待导入'; $('#stat-assigned').textContent=state.apps.filter(a=>a.proxyId).length; $('#stat-status').textContent=state.proxies.length?'SYNCED':'READY'; $('#last-sync').textContent=state.sources.length?`最近更新 ${new Date(state.sources[0].updatedAt||state.sources[0].createdAt||Date.now()).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}`:'尚未导入订阅'; const el=$('#recent-sources'); if(!state.sources.length){el.innerHTML='<div class="empty-icon">↥</div><p>还没有订阅源</p><small>添加链接或粘贴配置文本开始</small>';return;} el.innerHTML=state.sources.slice(0,3).map(s=>`<div class="recent-row"><span>${esc(s.name)}</span><b>${s.nodeCount||0}</b></div>`).join(''); }
+function renderOverview(){
+  const nodes=state.proxies.filter(p=>!isSubscriptionNotice(p));
+  const found=nodes.filter(p=>p.lastProbe?.ip).length;
+  const assigned=state.apps.filter(a=>a.proxyId).length;
+  $('#stat-sources').textContent=state.sources.length;
+  $('#stat-proxies').textContent=nodes.length;
+  $('#stat-proxies-note').textContent=nodes.length?`其中 ${found} 个已查到出口 IP`:'等待导入';
+  $('#stat-assigned').textContent=assigned;
+  $('#stat-status').textContent=nodes.length?`${found} / ${nodes.length}`:'READY';
+  $('#last-sync').textContent=state.sources.length?`最近更新 ${new Date(state.sources[0].updatedAt||state.sources[0].createdAt||Date.now()).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}`:'尚未导入订阅';
+  const el=$('#recent-sources');
+  if(!state.sources.length){el.innerHTML='<div class="empty-icon">↥</div><p>还没有订阅源</p><small>添加链接或粘贴配置文本开始</small>';return;}
+  el.innerHTML=state.sources.slice(0,3).map(s=>`<div class="recent-row"><span>${esc(s.name)}</span><b>${s.nodeCount||0}</b></div>`).join('');
+  $('#overview-task-title').textContent='当前待办';
+  const unassigned=state.apps.filter(a=>!a.proxyId).length;
+  const failed=nodes.filter(p=>p.lastProbe?.error).length;
+  const recent=nodes.map(p=>p.lastProbe?.checkedAt).filter(Boolean).sort().at(-1);
+  $('#overview-task-list').innerHTML=`<div class="guide"><b>✓</b><div><strong>${found} 个节点已查到出口 IP</strong><span>${nodes.length-found-failed} 个未检测，${failed} 个检测失败</span></div></div><div class="guide"><b>▦</b><div><strong>${assigned} 个应用已分配</strong><span>${unassigned} 个应用待选择节点 · ${state.bridges.length} 个本地端口已启用</span></div></div><div class="guide"><b>◷</b><div><strong>最近检测</strong><span>${recent?esc(new Date(recent).toLocaleString('zh-CN')):'尚未检测'}</span></div></div>`;
+}
 async function refreshSource(id){ const source=state.sources.find(s=>s.id===id); if(!source?.url || source.url==='本地粘贴') return; const button=document.querySelector(`[data-refresh="${id}"]`); if(button){button.disabled=true;button.textContent='解析中…';} try{const response=await fetch(`/api/fetch?url=${encodeURIComponent(source.url)}`);const data=await response.json();if(!response.ok)throw new Error(data.error||'订阅请求失败');const parsed=parseContent(data.text,source);if(!parsed.length)throw new Error('没有识别到节点');const previous=state.proxies.filter(p=>(p.sourceIds||[p.sourceId]).includes(id));const used=new Set();const nameKey=p=>`${p.protocol}|${String(p.name).replace(/[+\s]+/g,'').toLowerCase()}`;const identity=p=>`${p.server}|${p.port}|${nameKey(p)}`;detachSource(id);for(const p of parsed){const old=previous.find(x=>!used.has(x.id)&&x.key===p.key)||previous.find(x=>!used.has(x.id)&&identity(x)===identity(p))||previous.find(x=>!used.has(x.id)&&nameKey(x)===nameKey(p)&&previous.filter(y=>nameKey(y)===nameKey(p)).length===1&&parsed.filter(y=>nameKey(y)===nameKey(p)).length===1);if(old){used.add(old.id);p.id=old.id;if(old.lastProbe&&old.server===p.server&&old.port===p.port&&old.username===p.username&&old.password===p.password)p.lastProbe=old.lastProbe;}}mergeParsed(source,parsed);source.nodeCount=parsed.length;source.updatedAt=new Date().toISOString();state.apps.forEach(a=>{if(!state.proxies.some(p=>p.id===a.proxyId))a.proxyId='';});await save();await stopMissingBridges();toast(`已重新解析 ${parsed.length} 个节点`);}catch(error){if(button){button.disabled=false;button.textContent='重新解析';}toast(`重新解析失败：${error.message}`);} }
 function renderSources(){ const el=$('#source-list'); if(!state.sources.length){el.innerHTML='<div class="panel empty-state"><div class="empty-icon">↥</div><p>还没有订阅源</p><small>添加链接或粘贴配置内容开始</small></div>';return;} el.innerHTML=state.sources.map(s=>`<div class="source-card"><div class="source-main"><div class="source-icon">↥</div><div><div class="source-name">${esc(s.name)}</div><div class="source-url">${esc(s.url)}</div></div></div><div class="source-meta"><strong>${s.nodeCount||0}</strong><span>个节点</span></div><div class="source-actions">${s.url!=='本地粘贴'?`<button class="small-btn" data-refresh="${s.id}">重新解析</button>`:''}<button class="small-btn danger" data-delete-source="${s.id}">删除</button></div></div>`).join(''); el.querySelectorAll('[data-delete-source]').forEach(b=>b.onclick=()=>{const id=b.dataset.deleteSource;state.sources=state.sources.filter(s=>s.id!==id);detachSource(id);state.apps.forEach(a=>{if(!state.proxies.some(p=>p.id===a.proxyId))a.proxyId='';});save();stopMissingBridges();toast('已删除订阅源及其节点');}); el.querySelectorAll('[data-refresh]').forEach(b=>b.onclick=()=>refreshSource(b.dataset.refresh)); }
 function filteredProxies(){const q=$('#proxy-search').value.trim().toLowerCase();return state.proxies.filter(p=>!q||[p.name,p.server,p.protocol,p.sourceName].join(' ').toLowerCase().includes(q));}
@@ -74,26 +93,30 @@ async function checkNodeBridge(id){try{const result=await bridgeRequest('/api/br
 const probingNodes = new Set();
 const selectedProbeIds = new Set();
 let bulkProbeRunning = false;
+let bulkProbeCancelled = false;
+function bulkProbeStatus(message,running){const el=$('#bulk-probe-progress');el.textContent=message;el.classList.toggle('hidden',!message);$('#cancel-bulk-probe').classList.toggle('hidden',!running);}
+$('#cancel-bulk-probe').onclick=()=>{bulkProbeCancelled=true;bulkProbeStatus('正在停止：进行中的请求完成后保存已得结果…',false);};
 const probeBridgeFor = p => bridgeFor(`pool-${p.id}`) || state.bridges.find(b => state.apps.some(a => a.id === b.appId && a.proxyId === p.id));
 function probeSummary(p){const r=p.lastProbe;if(!r)return '';const date=r.checkedAt?new Date(r.checkedAt).toLocaleString('zh-CN'):'';if(r.error)return `<span class="probe-result probe-error" title="检测时间：${esc(date)}">失败：${esc(r.error)}</span>`;const pieces=[];if(r.ip)pieces.push(`<span>IP ${esc(r.ip)}</span>`);if(Number.isFinite(r.latencyMs))pieces.push(`<span>${Math.round(r.latencyMs)} ms</span>`);if(Number.isFinite(r.downloadMbps))pieces.push(`<span>${r.downloadMbps.toFixed(2)} Mbps</span>`);if(!pieces.length)return '';return `<span class="probe-result" title="检测时间：${esc(date)}">${pieces.join('')}</span>`;}
 async function runNodeProbe(id,kind){if(probingNodes.has(id))return;const p=state.proxies.find(item=>item.id===id);if(!p)return;probingNodes.add(id);renderProxies();try{const result=await bridgeRequest('/api/proxy/probe',{id,kind});p.lastProbe=result;await save().catch(()=>{});toast(kind==='ip'?`出口 IP：${result.ip}`:`下载约 2 MB：${result.downloadMbps.toFixed(2)} Mbps · ${result.latencyMs} ms`);}catch(error){p.lastProbe={error:error.message,checkedAt:new Date().toISOString()};await save().catch(()=>{});toast(`探测失败：${error.message}`);}finally{probingNodes.delete(id);renderProxies();}}
 async function runSelectedProbes(kind){
   if(bulkProbeRunning)return toast('批量检测正在进行，请等待当前任务结束');
   const rows=filteredProxies();
-  const selected=rows.filter(p=>selectedProbeIds.has(p.id));
+  const selected=rows.filter(p=>selectedProbeIds.has(p.id)&&!isSubscriptionNotice(p));
   if(!selected.length)return toast('请先勾选要检测的节点');
   const eligible=selected.filter(p=>probeBridgeFor(p)||nativeProbeable(p));
   const skipped=selected.length-eligible.length;
   if(!eligible.length)return toast('选中的节点没有可用代理端口，请先启用节点');
   const concurrency=Math.min(8,Math.max(1,Number($('#probe-concurrency').value)||5));
   bulkProbeRunning=true;
+  bulkProbeCancelled=false;
   $('#probe-selected-ip').disabled=true;
   $('#probe-selected-speed').disabled=true;
   $('#probe-concurrency').disabled=true;
-  eligible.forEach(p=>probingNodes.add(p.id));
+  bulkProbeStatus(`准备检测 ${eligible.length} 个节点…`,true);
   renderProxies();
   let cursor=0,success=0,failed=0;
-  const worker=async()=>{while(cursor<eligible.length){const p=eligible[cursor++];try{p.lastProbe=await bridgeRequest('/api/proxy/probe',{id:p.id,kind});success++;}catch(error){p.lastProbe={error:error.message,checkedAt:new Date().toISOString()};failed++;}finally{probingNodes.delete(p.id);renderProxies();}}};
+  const worker=async()=>{while(!bulkProbeCancelled&&cursor<eligible.length){const p=eligible[cursor++];probingNodes.add(p.id);try{p.lastProbe=await bridgeRequest('/api/proxy/probe',{id:p.id,kind});success++;}catch(error){p.lastProbe={error:error.message,checkedAt:new Date().toISOString()};failed++;}finally{probingNodes.delete(p.id);bulkProbeStatus(`${bulkProbeCancelled?'正在停止':'检测中'}：${success+failed} / ${eligible.length} · 成功 ${success} · 失败 ${failed}`,!bulkProbeCancelled);renderProxies();}}};
   await Promise.all(Array.from({length:Math.min(concurrency,eligible.length)},worker)).finally(()=>{
     bulkProbeRunning=false;
     $('#probe-selected-ip').disabled=false;
@@ -102,7 +125,9 @@ async function runSelectedProbes(kind){
   });
   try{await save();}catch{}
   const suffix=skipped?`，跳过 ${skipped} 个未启用节点`:'';
-  toast(`${kind==='ip'?'查 IP':'测速'}完成：成功 ${success} 个${failed?`，失败 ${failed} 个`:''}${suffix}`);
+  const summary=`${bulkProbeCancelled&&eligible.length>success+failed?'已取消':'已完成'}：成功 ${success} 个，失败 ${failed} 个，未处理 ${eligible.length-success-failed} 个${suffix}`;
+  bulkProbeStatus(summary,false);
+  toast(summary);
 }
 function renderProxies(){
   if(window.renderProxiesEnhanced)return window.renderProxiesEnhanced();

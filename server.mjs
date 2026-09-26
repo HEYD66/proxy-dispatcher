@@ -239,8 +239,8 @@ const server = http.createServer(async (req, res) => {
 try {
   if (currentSettings.logRetentionDays) await pruneOldEvents();
   const restored = currentSettings.restoreOnLaunch ? await restoreBridges() : { restored: 0 };
-  if (restored.restored) console.log(`Restored ${restored.restored} active listeners in one Mihomo process`);
-  await logEvent('info', '启动', currentSettings.restoreOnLaunch ? `本机服务启动，恢复 ${restored.restored} 个代理端口` : '本机服务启动，已跳过活动端口恢复');
+  if (restored.restored) console.log(`Restored ${restored.restored} active listeners in one Mihomo process${restored.remapped ? `; reassigned ${restored.remapped} occupied ports` : ''}`);
+  await logEvent('info', '启动', currentSettings.restoreOnLaunch ? `本机服务启动，恢复 ${restored.restored} 个代理端口${restored.remapped ? `，其中 ${restored.remapped} 个端口因占用重新分配` : ''}` : '本机服务启动，已跳过活动端口恢复');
 } catch (error) {
   console.error(`Active listener restore failed: ${error.message}`);
   await logEvent('error', '启动', '活动代理端口恢复失败');

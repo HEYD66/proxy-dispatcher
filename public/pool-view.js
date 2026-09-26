@@ -9,7 +9,11 @@ const metric = (value, suffix, digits = 0) => Number.isFinite(value) ? `${Number
 const nodeIp = p => p.lastProbe?.ip || (p.lastProbe?.error ? '检测失败' : '待查');
 const nodeDelay = p => metric(p.lastProbe?.latencyMs, 'ms');
 const nodeSpeed = p => metric(p.lastProbe?.downloadMbps, 'Mbps', 2);
-const nodeConnectivity = p => p.lastProbe?.error ? '失败' : p.lastProbe?.ip ? '已通过' : '未检测';
+const nodeConnectivity = p => p.lastProbe?.error ? '检测失败' : p.lastProbe?.ip ? 'IP 已查到' : '未检测';
+const checkedTime = p => p.lastProbe?.checkedAt ? new Date(p.lastProbe.checkedAt).toLocaleString('zh-CN') : '尚未检测';
+const assignedApps = p => state.apps.filter(app => app.proxyId === p.id);
+const assignmentBadge = p => { const apps=assignedApps(p); return apps.length ? `<span class="assignment-badge" title="${esc(apps.map(a=>a.name).join('、'))}">已分配 ${apps.length}</span>` : ''; };
+const probeRank = p => p.lastProbe?.ip ? 0 : p.lastProbe?.error ? 2 : 1;
 
 function sourceGroups(rows) {
   const groups = new Map(state.sources.map(source => [source.id, { id: source.id, name: source.name, items: [] }]));
@@ -24,6 +28,7 @@ function sourceGroups(rows) {
 }
 
 function nodeActionButtons(p) {
+  if(isSubscriptionNotice(p))return '<span class="muted">订阅信息，仅供查看</span>';
   const id = esc(p.id);
   const bridge = bridgeFor(`pool-${p.id}`);
   const available = bridge || probeBridgeFor(p) || nativeProbeable(p);
@@ -45,12 +50,12 @@ function nodeActionButtons(p) {
 function nodeCard(p) {
   const bridge = bridgeFor(`pool-${p.id}`);
   const preview = bridge ? '本地代理已启用，可复制使用' : bridgeable(p) ? (p.rawLine ? '未启用 · 按需启动' : '需重新解析') : directExportable(p) ? '原生代理 · 可直接复制' : '缺少账号或密码 · 不能直接导出';
-  return `<article class="proxy-card${bridge ? ' is-active' : ''}"><div class="proxy-card-head"><label class="node-check"><input type="checkbox" data-probe-select="${esc(p.id)}" ${selectedProbeIds.has(p.id) ? 'checked' : ''} ${probingNodes.has(p.id) ? 'disabled' : ''}/><span class="node-name" title="${esc(p.name)}">${esc(p.name)}</span></label>${probeSummary(p)}<span class="pill">${esc(p.protocol)}</span></div><div class="proxy-card-endpoint" title="${esc(`${p.server}:${p.port}`)}">${esc(p.server)}:${esc(p.port)}</div><div class="proxy-card-preview">${esc(preview)}</div><div class="node-actions">${nodeActionButtons(p)}</div></article>`;
+  return `<article class="proxy-card${bridge ? ' is-active' : ''}"><div class="proxy-card-head"><label class="node-check"><input type="checkbox" data-probe-select="${esc(p.id)}" ${selectedProbeIds.has(p.id) ? 'checked' : ''} ${probingNodes.has(p.id) || isSubscriptionNotice(p) ? 'disabled' : ''}/><span class="node-name" title="${esc(p.name)}">${esc(p.name)}</span></label>${assignmentBadge(p)}${probeSummary(p)}<span class="pill">${esc(p.protocol)}</span></div><div class="proxy-card-endpoint" title="${esc(`${p.server}:${p.port}`)}">${esc(p.server)}:${esc(p.port)}</div><div class="proxy-card-preview">${isSubscriptionNotice(p)?'订阅信息 · 不参与默认分配和检测':esc(preview)} · ${esc(checkedTime(p))}</div><div class="node-actions">${nodeActionButtons(p)}</div></article>`;
 }
 
 function nodeListRow(p) {
   const status = nodeConnectivity(p);
-  return `<tr><td><input type="checkbox" aria-label="选择 ${esc(p.name)}" data-probe-select="${esc(p.id)}" ${selectedProbeIds.has(p.id) ? 'checked' : ''} ${probingNodes.has(p.id) ? 'disabled' : ''}/></td><td><div class="list-node-name" title="${esc(p.name)}">${esc(p.name)}</div><span class="list-protocol">${esc(p.protocol)}</span></td><td class="${status === '失败' ? 'status-error' : status === '已通过' ? 'status-good' : ''}">${status === '失败' ? `<span title="${esc(p.lastProbe?.error || '')}">失败</span>` : esc(status)}<small>${esc(nodeDelay(p))}</small></td><td class="${p.lastProbe?.error ? 'status-error' : p.lastProbe?.ip ? 'status-good' : ''}">${esc(nodeIp(p))}</td><td>${esc(nodeSpeed(p))}</td><td><div class="list-actions">${nodeActionButtons(p)}</div></td></tr>`;
+  return `<tr><td><input type="checkbox" aria-label="选择 ${esc(p.name)}" data-probe-select="${esc(p.id)}" ${selectedProbeIds.has(p.id) ? 'checked' : ''} ${probingNodes.has(p.id) || isSubscriptionNotice(p) ? 'disabled' : ''}/></td><td><div class="list-node-name" title="${esc(p.name)}">${esc(p.name)} ${assignmentBadge(p)}</div><span class="list-protocol">${esc(p.protocol)}</span></td><td class="${p.lastProbe?.error ? 'status-error' : p.lastProbe?.ip ? 'status-good' : ''}" title="${esc(p.lastProbe?.error || '')}">${esc(status)}<small>${esc(checkedTime(p))}</small></td><td class="${p.lastProbe?.error ? 'status-error' : p.lastProbe?.ip ? 'status-good' : ''}">${esc(nodeIp(p))}</td><td>${esc(nodeSpeed(p))}</td><td><div class="list-actions">${nodeActionButtons(p)}</div></td></tr>`;
 }
 
 function nodeTable(items) {
@@ -76,14 +81,15 @@ window.renderProxiesEnhanced = function () {
   const rows = filteredProxies();
   const groups = sourceGroups(rows);
   const searching = Boolean($('#proxy-search').value.trim());
-  $('#proxy-count').textContent = `${rows.length} / ${state.proxies.length} 个节点 · ${state.bridges.length} 个端口已启用`;
+  $('#proxy-count').textContent = `${rows.filter(p=>!isSubscriptionNotice(p)).length} / ${state.proxies.filter(p=>!isSubscriptionNotice(p)).length} 个节点 · ${rows.filter(isSubscriptionNotice).length} 条订阅信息 · ${state.bridges.length} 个端口已启用`;
   $('#proxy-empty').style.display = rows.length ? 'none' : 'block';
   $('#selected-proxy-count').textContent = `已选 ${selectedProbeIds.size} 个`;
-  const selectedVisible = rows.filter(p => selectedProbeIds.has(p.id)).length;
+  const selectableRows = rows.filter(p => !isSubscriptionNotice(p));
+  const selectedVisible = selectableRows.filter(p => selectedProbeIds.has(p.id)).length;
   const selectAll = $('#select-all-proxies');
-  selectAll.checked = rows.length > 0 && selectedVisible === rows.length;
-  selectAll.indeterminate = selectedVisible > 0 && selectedVisible < rows.length;
-  selectAll.onchange = () => { rows.forEach(p => selectAll.checked ? selectedProbeIds.add(p.id) : selectedProbeIds.delete(p.id)); renderProxies(); };
+  selectAll.checked = selectableRows.length > 0 && selectedVisible === selectableRows.length;
+  selectAll.indeterminate = selectedVisible > 0 && selectedVisible < selectableRows.length;
+  selectAll.onchange = () => { selectableRows.forEach(p => selectAll.checked ? selectedProbeIds.add(p.id) : selectedProbeIds.delete(p.id)); renderProxies(); };
   $('#pool-view-cards').setAttribute('aria-pressed', String(poolViewMode === 'cards'));
   $('#pool-view-list').setAttribute('aria-pressed', String(poolViewMode === 'list'));
   const allCollapsed = groups.length > 0 && groups.every(group => collapsedSources.has(group.id));
@@ -91,9 +97,12 @@ window.renderProxiesEnhanced = function () {
   const grid = $('#proxy-grid');
   grid.innerHTML = groups.map(group => {
     const collapsed = !searching && collapsedSources.has(group.id);
-    const selected = group.items.filter(p => selectedProbeIds.has(p.id)).length;
-    const body = collapsed ? '' : poolViewMode === 'cards' ? `<div class="proxy-grid">${group.items.map(nodeCard).join('')}</div>` : nodeTable(group.items);
-    return `<section class="proxy-source-group"><div class="proxy-source-heading"><button type="button" class="source-toggle" data-toggle-source="${esc(group.id)}" aria-expanded="${!collapsed}"><span class="source-chevron">${collapsed ? '▸' : '▾'}</span><strong title="${esc(group.name)}">${esc(group.name)}</strong><span>${group.items.length} 个节点</span></button><label class="source-select"><input type="checkbox" data-source-select="${esc(group.id)}" ${selected === group.items.length ? 'checked' : ''}/>选中本组</label></div>${body}</section>`;
+    const nodes=group.items.filter(p=>!isSubscriptionNotice(p));
+    const notices=group.items.filter(isSubscriptionNotice);
+    const selected = nodes.filter(p => selectedProbeIds.has(p.id)).length;
+    const section=items=>poolViewMode === 'cards' ? `<div class="proxy-grid">${items.map(nodeCard).join('')}</div>` : nodeTable(items);
+    const body = collapsed ? '' : `${nodes.length?section(nodes):''}${notices.length?`<details class="source-notices"><summary>订阅信息 · ${notices.length} 条</summary>${section(notices)}</details>`:''}`;
+    return `<section class="proxy-source-group"><div class="proxy-source-heading"><button type="button" class="source-toggle" data-toggle-source="${esc(group.id)}" aria-expanded="${!collapsed}"><span class="source-chevron">${collapsed ? '▸' : '▾'}</span><strong title="${esc(group.name)}">${esc(group.name)}</strong><span>${nodes.length} 个节点${notices.length?` · ${notices.length} 条订阅信息`:''}</span></button><label class="source-select"><input type="checkbox" data-source-select="${esc(group.id)}" ${nodes.length&&selected===nodes.length?'checked':''} ${nodes.length?'':'disabled'}/>选中本组</label></div>${body}</section>`;
   }).join('');
   grid.querySelectorAll('[data-toggle-source]').forEach(button => button.onclick = () => {
     const id = button.dataset.toggleSource;
@@ -103,13 +112,14 @@ window.renderProxiesEnhanced = function () {
   grid.querySelectorAll('[data-source-select]').forEach(input => input.onchange = () => {
     const group = groups.find(item => item.id === input.dataset.sourceSelect);
     if (!group) return;
-    group.items.forEach(p => input.checked ? selectedProbeIds.add(p.id) : selectedProbeIds.delete(p.id));
+    group.items.filter(p=>!isSubscriptionNotice(p)).forEach(p => input.checked ? selectedProbeIds.add(p.id) : selectedProbeIds.delete(p.id));
     renderProxies();
   });
   grid.querySelectorAll('[data-source-select]').forEach(input => {
     const group = groups.find(item => item.id === input.dataset.sourceSelect);
-    const selected = group?.items.filter(p => selectedProbeIds.has(p.id)).length || 0;
-    input.indeterminate = selected > 0 && selected < group.items.length;
+    const nodes=group?.items.filter(p=>!isSubscriptionNotice(p))||[];
+    const selected = nodes.filter(p => selectedProbeIds.has(p.id)).length;
+    input.indeterminate = selected > 0 && selected < nodes.length;
   });
   wireNodeActions(grid);
 };
@@ -129,6 +139,7 @@ function appNodeInfo(p) {
 function appActions(app, p, bridge) {
   let actions = '';
   if (bridge || directExportable(p)) actions += `<button class="small-btn" data-copy-assigned="${esc(app.id)}">复制代理</button>`;
+  if (bridge || nativeProbeable(p)) actions += `<button class="small-btn" data-probe-assigned="${esc(app.id)}">查出口 IP</button>`;
   if (bridgeable(p)) actions += `<button class="small-btn" data-bridge-app="${esc(app.id)}">${bridge ? '停止本地代理' : '启动本地代理'}</button>`;
   actions += `<button class="small-btn danger" data-delete-app="${esc(app.id)}">删除</button>`;
   return actions;
@@ -137,7 +148,7 @@ function appActions(app, p, bridge) {
 function appCard(app) {
   const p = state.proxies.find(item => item.id === app.proxyId);
   const bridge = bridgeFor(app.id);
-  const status = bridge ? `本地端口 ${bridge.port} 已启用` : p ? bridgeable(p) ? '加密节点 · 需要启动本地代理' : directExportable(p) ? '原生代理 · 可直接复制' : '代理凭据不完整' : '选择节点后可分配';
+  const status = bridge ? `本地端口 ${bridge.port} 已启用 · ${p?.lastProbe?.error?'最近检测失败':p?.lastProbe?.ip?'最近查到出口 IP':'出口 IP 待检测'}` : p ? bridgeable(p) ? '本地代理未启用' : directExportable(p) ? '原生代理 · 可直接复制' : '代理凭据不完整' : '选择节点后可分配';
   return `<article class="app-card"><div class="app-head"><div class="app-title">${esc(app.name)}</div></div><div class="app-desc">${esc(app.description || '独立代理分配')}</div>${appPickerTrigger(app, p)}${appNodeInfo(p)}<div class="app-status">${esc(status)}</div><div class="app-actions">${appActions(app, p, bridge)}</div></article>`;
 }
 
@@ -167,6 +178,7 @@ window.renderAppsEnhanced = function () {
     if (bridge) copyText(formatBridge(bridge)); else if (directExportable(p)) copyText(formatProxy(p));
   });
   el.querySelectorAll('[data-bridge-app]').forEach(button => button.onclick = () => bridgeFor(button.dataset.bridgeApp) ? stopAppBridge(button.dataset.bridgeApp) : startAppBridge(button.dataset.bridgeApp));
+  el.querySelectorAll('[data-probe-assigned]').forEach(button => button.onclick = () => {const app=state.apps.find(item=>item.id===button.dataset.probeAssigned);if(app?.proxyId)runNodeProbe(app.proxyId,'ip');});
   el.querySelectorAll('[data-delete-app]').forEach(button => button.onclick = async () => {
     const id = button.dataset.deleteApp;
     if (bridgeFor(id)) await stopAppBridge(id);
@@ -180,14 +192,18 @@ function renderAppPickerChoices() {
   const app = state.apps.find(item => item.id === pickingForAppId);
   if (!app) return;
   const query = $('#app-picker-search').value.trim().toLowerCase();
-  const matches = state.proxies.filter(p => !query || [p.name, p.protocol, p.sourceName, p.server, p.lastProbe?.ip].join(' ').toLowerCase().includes(query));
+  const sourceId=$('#app-picker-source').value;
+  const successOnly=$('#app-picker-success-only').checked;
+  const assignable=state.proxies.filter(p=>!isSubscriptionNotice(p)&&(bridgeable(p)||directExportable(p)));
+  const matches = assignable.filter(p => (!sourceId || (p.sourceIds||[p.sourceId]).includes(sourceId)) && (!successOnly || p.lastProbe?.ip) && (!query || [p.name, p.protocol, p.sourceName, p.server, p.lastProbe?.ip].join(' ').toLowerCase().includes(query)));
   const groups = sourceGroups(matches);
-  $('#app-picker-count').textContent = `找到 ${matches.length} / ${state.proxies.length} 个节点 · 绿色表示出口 IP 已检测成功`;
+  $('#app-picker-count').textContent = `找到 ${matches.length} / ${assignable.length} 个可分配节点 · 绿色表示曾查到出口 IP，使用前仍可重测`;
   const clear = !query ? `<button type="button" class="picker-node clear-choice" data-pick-node="" ${!app.proxyId ? 'aria-current="true"' : ''}><span class="picker-name">暂不分配</span><span class="picker-hint">清除当前应用的节点</span></button>` : '';
-  $('#app-picker-results').innerHTML = clear + (matches.length ? groups.map(group => `<section class="picker-group"><h4>${esc(group.name)} <span>${group.items.length}</span></h4>${group.items.map(p => {
+  $('#app-picker-results').innerHTML = clear + (matches.length ? groups.map(group => `<section class="picker-group"><h4>${esc(group.name)} <span>${group.items.length}</span></h4>${group.items.sort((a,b)=>probeRank(a)-probeRank(b)||a.name.localeCompare(b.name,'zh-CN')).map(p => {
     const result = p.lastProbe?.ip ? 'success' : p.lastProbe?.error ? 'failed' : '';
-    const status = p.lastProbe?.ip ? '检测成功' : p.lastProbe?.error ? '检测失败' : '未检测';
-    return `<button type="button" class="picker-node ${result}" data-pick-node="${esc(p.id)}" ${p.id === app.proxyId ? 'aria-current="true"' : ''}><span class="picker-name" title="${esc(p.name)}">${esc(p.name)}<small>${esc(p.protocol)}</small></span><span class="picker-status">${status}</span><span class="picker-ip">${esc(p.lastProbe?.ip || '—')}</span><span>${esc(nodeDelay(p))}</span><span>${esc(nodeSpeed(p))}</span></button>`;
+    const status = p.lastProbe?.ip ? 'IP 已查到' : p.lastProbe?.error ? '检测失败' : '未检测';
+    const used=assignedApps(p).filter(a=>a.id!==app.id);
+    return `<button type="button" class="picker-node ${result}" data-pick-node="${esc(p.id)}" ${p.id === app.proxyId ? 'aria-current="true"' : ''} title="检测时间：${esc(checkedTime(p))}${used.length?` · 已分配给 ${esc(used.map(a=>a.name).join('、'))}`:''}"><span class="picker-name" title="${esc(p.name)}">${esc(p.name)}<small>${esc(p.protocol)}</small>${p.id===app.proxyId?'<small class="picker-used">当前应用</small>':used.length?`<small class="picker-used">已分配 ${used.length}</small>`:''}</span><span class="picker-status">${status}</span><span class="picker-ip">${esc(p.lastProbe?.ip || '—')}</span><span>${esc(nodeDelay(p))}</span><span>${esc(nodeSpeed(p))}</span></button>`;
   }).join('')}</section>`).join('') : '<p class="picker-empty">没有匹配的节点</p>');
 }
 function openAppPicker(appId) {
@@ -196,6 +212,8 @@ function openAppPicker(appId) {
   pickingForAppId = appId;
   $('#app-picker-title').textContent = `为 ${app.name} 选择代理节点`;
   $('#app-picker-search').value = '';
+  $('#app-picker-success-only').checked=false;
+  $('#app-picker-source').innerHTML='<option value="">全部订阅</option>'+state.sources.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
   renderAppPickerChoices();
   $('#app-picker-modal').classList.remove('hidden');
   $('#app-picker-search').focus();
@@ -203,19 +221,34 @@ function openAppPicker(appId) {
 function closeAppPicker() { pickingForAppId = ''; $('#app-picker-modal').classList.add('hidden'); }
 async function assignAppProxy(app, proxyId) {
   if (app.proxyId === proxyId) return;
+  const proxy=state.proxies.find(p=>p.id===proxyId);
+  if(proxy && isSubscriptionNotice(proxy))throw new Error('订阅信息不能分配给应用');
+  if(proxy && !bridgeable(proxy) && !directExportable(proxy))throw new Error('节点尚不能转换为目标应用可用的代理');
+  if(proxy && bridgeable(proxy) && !proxy.rawLine)throw new Error('节点缺少转换配置，请重新解析订阅');
+  const previousId=app.proxyId;
   const oldBridge = bridgeFor(app.id);
+  if(proxy && bridgeable(proxy))await bridgeRequest('/api/bridge/start',{appId:app.id,name:proxy.name,rawLine:proxy.rawLine});
   app.proxyId = proxyId;
-  await save();
-  if (oldBridge) await stopAppBridge(app.id);
+  try{await save();}catch(error){
+    app.proxyId=previousId;
+    if(oldBridge){const old=state.proxies.find(p=>p.id===previousId);if(old?.rawLine)await bridgeRequest('/api/bridge/start',{appId:app.id,name:old.name,rawLine:old.rawLine});}
+    else if(proxy && bridgeable(proxy))await bridgeRequest('/api/bridge/stop',{appId:app.id});
+    await reloadBridges();
+    throw error;
+  }
+  if(oldBridge && (!proxy || !bridgeable(proxy)))await bridgeRequest('/api/bridge/stop',{appId:app.id});
+  await reloadBridges();
 }
 $('#app-picker-search').oninput = renderAppPickerChoices;
+$('#app-picker-source').onchange = renderAppPickerChoices;
+$('#app-picker-success-only').onchange = renderAppPickerChoices;
 $('#app-picker-results').onclick = async event => {
   const choice = event.target.closest('[data-pick-node]');
   if (!choice) return;
   const app = state.apps.find(item => item.id === pickingForAppId);
   if (!app) return;
-  try { await assignAppProxy(app, choice.dataset.pickNode); closeAppPicker(); toast('应用分配已保存'); }
-  catch (error) { toast(`分配失败：${error.message}`); }
+  try { await assignAppProxy(app, choice.dataset.pickNode); closeAppPicker(); const p=state.proxies.find(item=>item.id===choice.dataset.pickNode); toast(p?bridgeable(p)?'应用分配已保存，本地端口已启用；请查出口 IP':'应用分配已保存，可复制原生代理':'应用分配已清除'); }
+  catch (error) { closeAppPicker(); renderApps(); toast(`分配后代理未就绪：${error.message}`); }
 };
 $('#close-app-picker').onclick = closeAppPicker;
 $('#cancel-app-picker').onclick = closeAppPicker;
@@ -240,8 +273,8 @@ $('#assign-node-modal').onclick = event => { if (event.target.id === 'assign-nod
 $('#confirm-assign-node').onclick = async () => {
   const app = state.apps.find(item => item.id === $('#assign-app-target').value);
   if (!app || !assigningNodeId) return;
-  try { await assignAppProxy(app, assigningNodeId); closeNodeAssignment(); go('apps'); toast('节点已分配给应用'); }
-  catch (error) { toast(`分配失败：${error.message}`); }
+  try { await assignAppProxy(app, assigningNodeId); const p=state.proxies.find(item=>item.id===assigningNodeId); closeNodeAssignment(); go('apps'); toast(bridgeable(p)?'节点已分配，本地端口已启用；请查出口 IP':'节点已分配，可复制原生代理'); }
+  catch (error) { closeNodeAssignment(); go('apps'); toast(`分配后代理未就绪：${error.message}`); }
 };
 $('#pool-view-cards').onclick = () => { poolViewMode = 'cards'; localStorage.setItem('pd_pool_view', poolViewMode); renderProxies(); };
 $('#pool-view-list').onclick = () => { poolViewMode = 'list'; localStorage.setItem('pd_pool_view', poolViewMode); renderProxies(); };

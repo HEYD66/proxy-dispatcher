@@ -41,6 +41,14 @@ async function freePort(reserved) {
   throw new Error('无法分配空闲端口');
 }
 
+async function portAvailable(port) {
+  return new Promise(resolve => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
+  });
+}
+
 function renameProxy(line, name) {
   const pattern = /^(\s*-\s*\{\s*name\s*:\s*)(?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^,}]*)(,)/;
   if (!pattern.test(line)) throw new Error('节点配置缺少可识别的 name 字段');
@@ -304,9 +312,17 @@ export function restoreBridges() {
     const data = JSON.parse(await readFile(activeFile, 'utf8'));
     if (!Array.isArray(data.entries)) throw new Error('活动节点存档格式错误');
     const entries = validateBridgeSnapshot(data.entries);
+    const reserved = new Set(entries.map(entry => entry.port));
+    let remapped = 0;
+    for (const entry of entries) {
+      if (await portAvailable(entry.port)) continue;
+      entry.port = await freePort(reserved);
+      remapped++;
+    }
     runtime = await launch(entries);
     for (const entry of entries) active.set(entry.appId, entry);
-    return { restored: entries.length };
+    if (remapped) await persist(entries);
+    return { restored: entries.length, remapped };
   });
 }
 
