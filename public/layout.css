@@ -59,3 +59,35 @@
   .filter-row{align-items:stretch;flex-direction:column}
   .search{width:100%}
 }
+
+/* Card pool layout: each node keeps its own selection, probe result and actions. */
+.proxy-bulkbar{display:flex;align-items:center;gap:10px;min-height:38px;margin:0 0 10px;padding:7px 10px;background:rgba(17,22,30,.72);border:1px solid var(--line);border-radius:8px}
+.check-label,.node-check{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+.check-label{font-size:11px;color:var(--text);white-space:nowrap}
+.check-label input,.node-check input{accent-color:var(--accent);width:15px;height:15px;margin:0;flex:0 0 auto}
+.bulk-spacer{flex:1}
+.compact-btn{padding:6px 10px;font-size:11px}
+.proxy-list-wrap{background:transparent}
+.proxy-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.proxy-card{min-width:0;padding:12px 13px;background:var(--panel);border:1px solid var(--line);border-radius:10px;transition:border-color .15s,background .15s}
+.proxy-card:hover{border-color:#43546a;background:#141b24}
+.proxy-card.is-active{border-color:#3b5a32}
+.proxy-card-probe{min-height:24px;margin-bottom:6px}
+.proxy-card-probe .probe-result{margin-top:0;font-size:11px;line-height:1.35}
+.probe-empty{color:#687787;font-size:10px}
+.proxy-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0}
+.node-check{min-width:0;flex:1;align-items:flex-start}
+.node-check .node-name{font-size:13px;line-height:1.35;overflow-wrap:anywhere}
+.proxy-card-head .pill{flex:0 0 auto}
+.proxy-card-origin{margin:5px 0 3px 23px;color:#6e7c8a;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proxy-card-endpoint{margin-left:23px;color:#aab6c3;font:10px ui-monospace,monospace;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proxy-card-preview{margin:7px 0 9px 23px;padding:6px 7px;background:#0e1319;border-radius:5px;color:#8f9eae;font:10px ui-monospace,monospace;line-height:1.4;min-height:27px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.proxy-card .node-actions{max-width:none;min-width:0;margin-left:23px}
+.proxy-card .node-actions .copy-btn{font-size:10px;padding:5px 8px}
+.proxy-card .muted{font-size:10px}
+@media(max-width:760px){
+  .proxy-grid{grid-template-columns:1fr}
+  .proxy-bulkbar{flex-wrap:wrap}
+  .bulk-spacer{display:none}
+  .compact-btn{flex:1}
+}

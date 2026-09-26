@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, Menu } from 'electron';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -11,6 +11,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 const serverFile = join(root, 'server.mjs');
 const bundledCore = join(root, 'vendor', 'mihomo', 'mihomo.exe');
 app.setName('代理分发器');
+Menu.setApplicationMenu(null);
 
 let backend;
 let backendPort;
