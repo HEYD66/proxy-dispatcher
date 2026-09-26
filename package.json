@@ -3,7 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "main": "electron-main.mjs",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "desktop": "electron .",
+    "package:win": "node scripts/package-windows.mjs"
+  },
+  "devDependencies": {
+    "electron": "44.4.5"
   }
 }

@@ -40,6 +40,12 @@ const server = http.createServer(async (req, res) => {
     if (req.headers.host !== ownHost || (req.headers.origin && req.headers.origin !== `http://${ownHost}`)) return send(res, 403, { error: '只允许本机同源访问' });
     const requestUrl = new URL(req.url, `http://${req.headers.host}`);
     if (requestUrl.pathname === '/api/health') return send(res, 200, { ok: true, port });
+    if (requestUrl.pathname === '/api/desktop/shutdown' && req.method === 'POST') {
+      if (!process.env.DESKTOP_CONTROL_TOKEN || req.headers['x-desktop-token'] !== process.env.DESKTOP_CONTROL_TOKEN) return send(res, 403, { error: '无权关闭桌面服务' });
+      send(res, 200, { stopping: true });
+      setImmediate(async () => { server.close(); await shutdownBridges(); process.exit(0); });
+      return;
+    }
     if (requestUrl.pathname === '/api/state' && req.method === 'GET') return send(res, 200, await loadState());
     if (requestUrl.pathname === '/api/state' && req.method === 'PUT') return send(res, 200, await saveState(await readJson(req)));
     if (requestUrl.pathname === '/api/fetch') {

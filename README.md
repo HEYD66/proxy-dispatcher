@@ -20,6 +20,12 @@ npm.cmd start
 
 管理服务仅监听 `127.0.0.1`，代理入口也仅监听 `127.0.0.1`。订阅、节点、应用分配保存在 `data/state.json`；活动监听端口及凭据保存在 `data/active-bridges.json`，服务重启后尝试恢复。修改前自动生成 `state.json.bak`。`data/` 已加入 `.gitignore`；其中含订阅签名链接、节点凭据和本地端口凭据，请限制文件访问。
 
+## Windows 桌面版（Electron）
+
+开发时运行 `npm.cmd run desktop`；执行 `npm.cmd run package:win` 后，在 `dist/ProxyDispatcher-1.0.0-win32-x64/` 中得到 `Proxy Dispatcher.exe` 和完整运行目录。复制整个目录即可运行，无需目标电脑另装 Node.js 或 Clash Verge。首次打包运行会尝试读取当前项目的本地数据，或从正在运行的旧网页服务导入订阅、节点和应用分配；不会将私人订阅写入安装包。桌面版随后把数据保存在 Windows 用户数据目录的 `代理分发器/data/` 下，与网页开发服务分开。关闭桌面窗口会停止它启动的 Mihomo 进程，活动端口记录保留供下次恢复。
+
+桌面版使用独立的随机本机管理端口，不占用网页开发服务的 `4173`。打包产物是便携目录，并非安装程序；请保留目录中的全部文件。当前仅打包 Windows x64。
+
 ## 输入与导出
 
 支持 Clash 行内 YAML 节点、部分多行 YAML、JSON `proxies/outbounds`、Base64 节点列表、常见 SS/VMess/VLESS/Trojan/HTTP/SOCKS URI，以及四段式代理文本。复杂供应商私有配置可能无法完整解析，应以 Mihomo 配置校验和出口测试为准。去重比较完整节点配置及协议字段，跨来源重复节点保留来源关联。
