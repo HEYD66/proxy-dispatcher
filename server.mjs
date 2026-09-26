@@ -41,7 +41,7 @@ async function fetchSubscription(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    const response = await fetch(parsed, { signal: controller.signal, redirect: 'follow', headers: { 'User-Agent': 'ProxyDispatcher/1.0' } });
+    const response = await fetch(parsed, { signal: controller.signal, redirect: 'follow', headers: { 'User-Agent': 'clash-verge/2.0', 'Accept': 'application/yaml, text/yaml, text/plain, */*' } });
     const text = await response.text();
     return { status: response.status, contentType: response.headers.get('content-type') || '', text };
   } finally { clearTimeout(timer); }

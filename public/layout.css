@@ -150,3 +150,27 @@ body{background:var(--bg);color:var(--text)}
 .toast{background:#d7eaff;color:#102341}
 @media(max-width:900px){.sidebar{width:78px}.brand{justify-content:center;padding-left:0;padding-right:0}.brand-copy,.brand-new{display:none}.main{width:calc(100% - 78px)}}
 @media(max-width:760px){.sidebar{width:64px}.main{width:calc(100% - 64px)}}
+
+/* Keep navigation stationary while the workspace scrolls. */
+html,body{height:100%;overflow:hidden}
+.app-shell{height:100vh;min-height:0;overflow:hidden}
+.sidebar{height:100vh;flex:0 0 228px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+.main{height:100vh;min-height:0;flex:1;width:auto;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+.topbar{justify-content:flex-end;margin-bottom:12px;min-height:32px}
+.proxy-groups{display:grid;gap:22px}
+.proxy-source-heading{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;padding:0 2px 7px;border-bottom:1px solid #454758}
+.proxy-source-heading h3{font-size:15px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proxy-source-heading span{flex:0 0 auto;color:#a9adbd;font-size:11px}
+.proxy-card{padding:10px 12px}
+.proxy-card.is-active{padding:9px 11px}
+.proxy-card-head{align-items:center;gap:8px}
+.node-check{align-items:center;flex:1 1 auto;min-width:0}
+.node-check .node-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.proxy-card-head .probe-result{display:flex;gap:6px;flex:0 1 auto;min-width:0;max-width:55%;overflow:hidden;color:#62e48a;font:10px ui-monospace,monospace;white-space:nowrap}
+.proxy-card-head .probe-result span{flex:0 0 auto}
+.proxy-card-head .pill{font-size:9px;padding:3px 5px}
+.proxy-card-endpoint{margin-top:7px;margin-left:23px}
+.proxy-card-preview{margin-top:6px;margin-bottom:7px;min-height:23px;padding:4px 7px;-webkit-line-clamp:1}
+.proxy-card .node-actions{display:flex;flex-wrap:wrap}
+@media(max-width:900px){.sidebar{flex-basis:78px}.nav-item{font-size:0;justify-content:center;padding-left:8px;padding-right:8px;white-space:nowrap}.nav-item span{font-size:18px}.sidebar-foot span:last-child{display:none}}
+@media(max-width:760px){.sidebar{flex-basis:64px}.proxy-card-head .probe-result{max-width:48%}}

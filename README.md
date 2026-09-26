@@ -5,7 +5,7 @@
 ## 转发方式
 
 - 原生 HTTP/HTTPS/SOCKS5：有账号和密码时直接导出四段式代理行，不经过 Mihomo。
-- SS/VMess/VLESS/Trojan：启用后由**同一个 Mihomo 进程**提供多个独立的本地 Mixed（HTTP+SOCKS）端口，每个端口绑定一个上游节点。节点池和“应用分配”共用此进程。
+- SS/SSR、VMess、VLESS、Trojan、AnyTLS、Hysteria/Hysteria2、TUIC、Snell、WireGuard、SSH：启用后由**同一个 Mihomo 进程**提供多个独立的本地 Mixed（HTTP+SOCKS）端口，每个端口绑定一个上游节点。节点池和“应用分配”共用此进程。具体节点仍需通过内核校验和出口检测。
 - 可在节点池逐条启用、停止和测试出口；搜索后点击“生成可用代理池”会增加当前筛选结果，已启用的其他端口继续保留。更改已启用的节点时会重建共享进程，现有连接可能短暂中断，原有端口和认证信息保持不变。
 - 节点池可按需查询出口 IP 和测速。原生 HTTP/HTTPS/SOCKS5 直接通过上游代理检测；加密节点需先启用共享内核端口。出口 IP 从 ipify 获取；测速通过 Cloudflare 下载约 2 MB，并显示首字节延迟与下载速率。结果附检测时间写入本地状态，刷新或重启后仍可查看；不会自动对全部节点测速。
 
@@ -29,7 +29,7 @@ npm.cmd start
 
 ## 输入与导出
 
-支持 Clash 行内 YAML 节点、部分多行 YAML、JSON `proxies/outbounds`、Base64 节点列表、常见 SS/VMess/VLESS/Trojan/HTTP/SOCKS URI，以及四段式代理文本。复杂供应商私有配置可能无法完整解析，应以 Mihomo 配置校验和出口测试为准。去重比较完整节点配置及协议字段，跨来源重复节点保留来源关联。
+支持 Clash YAML 的行内及多行节点（保留嵌套协议参数）、JSON `proxies/outbounds`、Base64 节点列表、常见 SS/SSR、VMess、VLESS、Trojan、AnyTLS、Hysteria/Hysteria2、TUIC、SSH、HTTP/SOCKS URI，以及四段式代理文本。Snell 和 WireGuard 等没有统一分享 URI 的协议通过 Clash YAML 导入。复杂供应商私有配置可能无法完整解析，应以 Mihomo 配置校验和出口测试为准。去重比较完整节点配置及协议字段，跨来源重复节点保留来源关联。节点池按订阅源分组，出口 IP、延迟及速度显示在对应节点名称后。
 
 可选导出格式：
 

@@ -23,7 +23,7 @@ function validate(input) {
   if (!input || typeof input.appId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(input.appId)) throw new Error('应用标识无效');
   if (typeof input.name !== 'string' || !input.name || input.name.length > 200) throw new Error('节点名称无效');
   if (typeof input.rawLine !== 'string' || input.rawLine.length > 8192 || !/^\s*-\s*\{.*\}\s*$/.test(input.rawLine) || /[\r\n\x00-\x1f]/.test(input.rawLine)) throw new Error('节点缺少 Clash 行内配置');
-  if (!/\btype\s*:\s*(ss|vmess|vless|trojan|anytls|hysteria2)\b/i.test(input.rawLine)) throw new Error('仅支持 SS、VMess、VLESS、Trojan、AnyTLS、Hysteria2 转换');
+  if (!/\btype\s*:\s*["']?(ss|ssr|vmess|vless|trojan|anytls|hysteria|hysteria2|tuic|snell|wireguard|ssh)\b/i.test(input.rawLine)) throw new Error('此节点协议暂不支持本地转换');
   return { appId: input.appId, name: input.name, rawLine: input.rawLine.trim() };
 }
 
@@ -48,7 +48,7 @@ function renameProxy(line, name) {
 function configText(entries) {
   const proxies = entries.map((entry, i) => `  ${renameProxy(entry.rawLine, `node-${i + 1}`)}`).join('\n');
   const listeners = entries.map((entry, i) => `  - name: ${JSON.stringify(entry.appId)}\n    type: mixed\n    port: ${entry.port}\n    listen: 127.0.0.1\n    proxy: ${JSON.stringify(`node-${i + 1}`)}\n    users:\n      - username: ${JSON.stringify(entry.username)}\n        password: ${JSON.stringify(entry.password)}`).join('\n');
-  return `allow-lan: false\nbind-address: 127.0.0.1\nmode: rule\nlog-level: warning\nipv6: false\ndns:\n  enable: true\n  ipv6: false\n  enhanced-mode: redir-host\n  use-hosts: false\n  use-system-hosts: false\n  default-nameserver:\n    - 223.5.5.5\n    - 8.8.8.8\n  nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\n  proxy-server-nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\nproxies:\n${proxies}\nlisteners:\n${listeners}\nrules:\n  - MATCH,DIRECT\n`;
+  return `allow-lan: false\nbind-address: 127.0.0.1\nmode: rule\nlog-level: warning\nipv6: true\ndns:\n  enable: true\n  ipv6: true\n  enhanced-mode: redir-host\n  use-hosts: false\n  use-system-hosts: false\n  default-nameserver:\n    - 223.5.5.5\n    - 8.8.8.8\n  nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\n  proxy-server-nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\nproxies:\n${proxies}\nlisteners:\n${listeners}\nrules:\n  - MATCH,DIRECT\n`;
 }
 
 async function portOpen(port) {
