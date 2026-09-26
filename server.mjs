@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startBridge, stopBridge, listBridges, checkBridge, startBridgePool, stopBridgePool } from './bridge.mjs';
+import { startBridge, stopBridge, listBridges, checkBridge, startBridgePool, stopBridgePool, stopAllBridges, restoreBridges, shutdownBridges } from './shared-bridge.mjs';
+import { loadState, saveState } from './store.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = join(root, 'public');
@@ -11,13 +12,13 @@ const port = Number(process.env.PORT || 4173);
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8' };
 
 function send(res, status, body, type = 'application/json; charset=utf-8') {
-  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' });
+  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
 }
 
 async function readJson(req) {
   let body = '';
-  for await (const chunk of req) { body += chunk; if (body.length > 256000) throw new Error('请求过大'); }
+  for await (const chunk of req) { body += chunk; if (body.length > 8000000) throw new Error('请求过大'); }
   return JSON.parse(body || '{}');
 }
 
@@ -35,8 +36,12 @@ async function fetchSubscription(url) {
 
 const server = http.createServer(async (req, res) => {
   try {
+    const ownHost = `127.0.0.1:${port}`;
+    if (req.headers.host !== ownHost || (req.headers.origin && req.headers.origin !== `http://${ownHost}`)) return send(res, 403, { error: '只允许本机同源访问' });
     const requestUrl = new URL(req.url, `http://${req.headers.host}`);
     if (requestUrl.pathname === '/api/health') return send(res, 200, { ok: true, port });
+    if (requestUrl.pathname === '/api/state' && req.method === 'GET') return send(res, 200, await loadState());
+    if (requestUrl.pathname === '/api/state' && req.method === 'PUT') return send(res, 200, await saveState(await readJson(req)));
     if (requestUrl.pathname === '/api/fetch') {
       const target = requestUrl.searchParams.get('url');
       if (!target) return send(res, 400, { error: '缺少 url 参数' });
@@ -50,6 +55,7 @@ const server = http.createServer(async (req, res) => {
     if (requestUrl.pathname === '/api/bridge/check' && req.method === 'POST') return send(res, 200, await checkBridge((await readJson(req)).appId));
     if (requestUrl.pathname === '/api/bridge/pool/start' && req.method === 'POST') return send(res, 200, await startBridgePool((await readJson(req)).items));
     if (requestUrl.pathname === '/api/bridge/pool/stop' && req.method === 'POST') return send(res, 200, await stopBridgePool());
+    if (requestUrl.pathname === '/api/bridge/stop-all' && req.method === 'POST') return send(res, 200, await stopAllBridges());
     const pathname = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname;
     const file = normalize(join(publicDir, pathname));
     if (!file.startsWith(publicDir) || !existsSync(file)) return send(res, 404, { error: 'Not found' });
@@ -61,4 +67,15 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+try {
+  const restored = await restoreBridges();
+  if (restored.restored) console.log(`Restored ${restored.restored} active listeners in one Mihomo process`);
+} catch (error) {
+  console.error(`Active listener restore failed: ${error.message}`);
+}
 server.listen(port, '127.0.0.1', () => console.log(`Proxy Dispatcher running at http://127.0.0.1:${port}`));
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
+  server.close();
+  await shutdownBridges();
+  process.exit(0);
+});

@@ -1,36 +1,38 @@
 # Proxy Dispatcher（代理分发器）
 
-一个本地运行的订阅节点整理工具：导入多个订阅链接、Clash YAML、Base64 节点列表或代理 URI，解析并去重后，可生成以下格式并按应用分配：
+本机订阅节点管理与按需分发工具。可一次粘贴多条订阅链接（每行一条），分别抓取、解析和更新。一个来源失败不影响其他来源。导入只保存节点，不自动启动节点或对全部节点测速。
+
+## 转发方式
+
+- 原生 HTTP/HTTPS/SOCKS5：有账号和密码时直接导出四段式代理行，不经过 Mihomo。
+- SS/VMess/VLESS/Trojan：启用后由**同一个 Mihomo 进程**提供多个独立的本地 Mixed（HTTP+SOCKS）端口，每个端口绑定一个上游节点。节点池和“应用分配”共用此进程。
+- 可在节点池逐条启用、停止和测试出口；搜索后点击“生成可用代理池”会增加当前筛选结果，已启用的其他端口继续保留。更改已启用的节点时会重建共享进程，现有连接可能短暂中断，原有端口和认证信息保持不变。
+
+生成的本地代理形如 `127.0.0.1:port:username:password`，只供**同一台机器**上的应用使用。本地端口启动成功不等于上游可达，使用前请单独测试出口。订阅商线路或 DNS 异常不会被格式转换解决。
+
+## Windows 运行
+
+```powershell
+npm.cmd start
+```
+
+打开 <http://127.0.0.1:4173>。默认复用 `D:\Clash Verge\verge-mihomo.exe`，可用 `MIHOMO_PATH` 指向其他内核。`MAX_ACTIVE_NODES` 设置同时启用数量上限，默认 200，最大 500。100 个节点可先全部导入，实际只启用需要的部分。
+
+管理服务仅监听 `127.0.0.1`，代理入口也仅监听 `127.0.0.1`。订阅、节点、应用分配保存在 `data/state.json`；活动监听端口及凭据保存在 `data/active-bridges.json`，服务重启后尝试恢复。修改前自动生成 `state.json.bak`。`data/` 已加入 `.gitignore`；其中含订阅签名链接、节点凭据和本地端口凭据，请限制文件访问。
+
+## 输入与导出
+
+支持 Clash 行内 YAML 节点、部分多行 YAML、JSON `proxies/outbounds`、Base64 节点列表、常见 SS/VMess/VLESS/Trojan/HTTP/SOCKS URI，以及四段式代理文本。复杂供应商私有配置可能无法完整解析，应以 Mihomo 配置校验和出口测试为准。去重比较完整节点配置及协议字段，跨来源重复节点保留来源关联。
+
+可选导出格式：
 
 - `hostname:port:username:password`
 - `username:password:hostname:port`
 - `username:password@hostname:port`
 - `hostname:port@username:password`
 
-对于 SS、VMess、VLESS、Trojan 节点，四段式文本不是可直接连接的 HTTP 代理。应用分配页会调用本机 Clash Verge 的 Mihomo 内核，把选中节点转换为仅监听 `127.0.0.1` 的本地 HTTP 代理，并显示真实的 `127.0.0.1:port:username:password`。单个应用分配使用一个 Mihomo 进程；批量代理池使用一个 Mihomo 进程和多个 `listeners`，每个节点仍有独立本地端口，避免为每个节点重复加载内核。启动前会用 Mihomo 校验配置；停止应用分配时会关闭对应进程。
+未带账号密码的原生代理不能填入要求四段式认证的目标应用；请按目标应用支持的无认证格式另行配置。
 
-“复制可直接代理”会跳过 SS/VMess 和缺少账号或密码的条目，避免生成目标应用会拒绝的无效代理池。若之前已经复制过旧列表，需要先在目标应用中删除旧条目，再使用应用分配页生成的本地代理。
+## Linux 部署边界
 
-“生成可用代理池”生成的是本机入口和格式正确的代理行；目标应用使用前仍应测试出口。节点供应商的域名解析、线路状态或账号失效会导致本地入口能启动但上游不可达。
-
-## 启动
-
-```powershell
-npm.cmd start
-```
-
-浏览器打开 <http://127.0.0.1:4173>。订阅 URL 由本地服务代取，解决浏览器跨域；订阅内容、节点和应用分配只保存在浏览器 localStorage，不会上传到第三方服务。
-
-## 支持的输入
-
-- Clash / 类 Clash YAML（`proxies:` 节点，支持多行和 `- {name: ..., server: ..., type: ...}` 行内对象）
-- JSON 中的 `proxies` / `outbounds`
-- Base64 编码的 URI 列表
-- `ss://`、`vmess://`、`vless://`、`trojan://`、`http(s)://`、`socks5://`
-- 截图中的四种 `host:port:user:pass` 变体
-
-URL 来源支持“重新解析”以抓取最新节点；粘贴型来源保留当前导入结果。解析是本地启发式解析器；复杂的供应商私有格式需要先转换为上述格式。
-
-## 本地转换依赖
-
-默认复用 `D:\Clash Verge\verge-mihomo.exe`。如安装位置不同，可通过 PowerShell 设置 `MIHOMO_PATH` 后启动服务。Mihomo 子进程只绑定本机回环地址，不会开放局域网监听。
+当前版本的管理 API 和代理端口都只绑定回环地址，适合 Windows 本机验证或 Linux 本机使用。**尚未实现公网代理分发、管理 API 认证、访问白名单、systemd 守护和 2 核 2 GB 机器的吞吐容量验证**。不能通过修改监听地址直接暴露到公网；对外服务需要先补鉴权、访问控制和带宽监控。Linux 可用 `MIHOMO_PATH` 指定内核、`STATE_FILE` 与 `ACTIVE_BRIDGES_FILE` 指定持久化位置。
