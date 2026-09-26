@@ -75,7 +75,7 @@ const server = http.createServer(async (req, res) => {
     if (requestUrl.pathname === '/api/proxy/probe' && req.method === 'POST') {
       const { id, kind } = await readJson(req);
       if (typeof id !== 'string' || id.length > 100 || !['ip', 'speed'].includes(kind)) return send(res, 400, { error: '探测参数无效' });
-      if (activeProbes >= 3) return send(res, 429, { error: '同时最多测试 3 个节点' });
+      if (activeProbes >= 10) return send(res, 429, { error: '同时最多测试 10 个节点' });
       const state = await loadState();
       const proxy = state.proxies.find(item => item.id === id);
       if (!proxy) return send(res, 404, { error: '节点不存在' });

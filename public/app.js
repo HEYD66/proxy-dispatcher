@@ -73,21 +73,33 @@ async function stopNodeBridge(id){try{await bridgeRequest('/api/bridge/stop',{ap
 async function checkNodeBridge(id){try{const result=await bridgeRequest('/api/bridge/check',{appId:`pool-${id}`});toast(result.upstreamReachable?'出口检测通过':`出口未通过：${result.error||result.status||'未知原因'}`);}catch(error){toast(error.message);}}
 const probingNodes = new Set();
 const selectedProbeIds = new Set();
+let bulkProbeRunning = false;
 const probeBridgeFor = p => bridgeFor(`pool-${p.id}`) || state.bridges.find(b => state.apps.some(a => a.id === b.appId && a.proxyId === p.id));
 function probeSummary(p){const r=p.lastProbe;if(!r)return '';const date=r.checkedAt?new Date(r.checkedAt).toLocaleString('zh-CN'):'';if(r.error)return `<span class="probe-result probe-error" title="检测时间：${esc(date)}">失败：${esc(r.error)}</span>`;const pieces=[];if(r.ip)pieces.push(`<span>IP ${esc(r.ip)}</span>`);if(Number.isFinite(r.latencyMs))pieces.push(`<span>${Math.round(r.latencyMs)} ms</span>`);if(Number.isFinite(r.downloadMbps))pieces.push(`<span>${r.downloadMbps.toFixed(2)} Mbps</span>`);if(!pieces.length)return '';return `<span class="probe-result" title="检测时间：${esc(date)}">${pieces.join('')}</span>`;}
 async function runNodeProbe(id,kind){if(probingNodes.has(id))return;const p=state.proxies.find(item=>item.id===id);if(!p)return;probingNodes.add(id);renderProxies();try{const result=await bridgeRequest('/api/proxy/probe',{id,kind});p.lastProbe=result;await save().catch(()=>{});toast(kind==='ip'?`出口 IP：${result.ip}`:`下载约 2 MB：${result.downloadMbps.toFixed(2)} Mbps · ${result.latencyMs} ms`);}catch(error){p.lastProbe={error:error.message,checkedAt:new Date().toISOString()};await save().catch(()=>{});toast(`探测失败：${error.message}`);}finally{probingNodes.delete(id);renderProxies();}}
 async function runSelectedProbes(kind){
+  if(bulkProbeRunning)return toast('批量检测正在进行，请等待当前任务结束');
   const rows=filteredProxies();
   const selected=rows.filter(p=>selectedProbeIds.has(p.id));
   if(!selected.length)return toast('请先勾选要检测的节点');
   const eligible=selected.filter(p=>probeBridgeFor(p)||nativeProbeable(p));
   const skipped=selected.length-eligible.length;
   if(!eligible.length)return toast('选中的节点没有可用代理端口，请先启用节点');
+  const concurrency=Math.min(8,Math.max(1,Number($('#probe-concurrency').value)||5));
+  bulkProbeRunning=true;
+  $('#probe-selected-ip').disabled=true;
+  $('#probe-selected-speed').disabled=true;
+  $('#probe-concurrency').disabled=true;
   eligible.forEach(p=>probingNodes.add(p.id));
   renderProxies();
   let cursor=0,success=0,failed=0;
   const worker=async()=>{while(cursor<eligible.length){const p=eligible[cursor++];try{p.lastProbe=await bridgeRequest('/api/proxy/probe',{id:p.id,kind});success++;}catch(error){p.lastProbe={error:error.message,checkedAt:new Date().toISOString()};failed++;}finally{probingNodes.delete(p.id);renderProxies();}}};
-  await Promise.all(Array.from({length:Math.min(3,eligible.length)},worker));
+  await Promise.all(Array.from({length:Math.min(concurrency,eligible.length)},worker)).finally(()=>{
+    bulkProbeRunning=false;
+    $('#probe-selected-ip').disabled=false;
+    $('#probe-selected-speed').disabled=false;
+    $('#probe-concurrency').disabled=false;
+  });
   try{await save();}catch{}
   const suffix=skipped?`，跳过 ${skipped} 个未启用节点`:'';
   toast(`${kind==='ip'?'查 IP':'测速'}完成：成功 ${success} 个${failed?`，失败 ${failed} 个`:''}${suffix}`);
