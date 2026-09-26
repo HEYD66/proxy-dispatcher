@@ -16,7 +16,7 @@
 npm.cmd start
 ```
 
-打开 <http://127.0.0.1:4173>。默认复用 `D:\Clash Verge\verge-mihomo.exe`，可用 `MIHOMO_PATH` 指向其他内核。`MAX_ACTIVE_NODES` 设置同时启用数量上限，默认 200，最大 500。100 个节点可先全部导入，实际只启用需要的部分。
+打开 <http://127.0.0.1:4173>。Windows 默认使用项目自带的 `vendor/mihomo/mihomo.exe`（v1.19.31），不依赖或修改 Clash Verge；只有设置 `MIHOMO_PATH` 时才改用指定内核。内核版本、官方来源、校验值和许可见 `vendor/mihomo/README.md`。`MAX_ACTIVE_NODES` 设置同时启用数量上限，默认 200，最大 500。100 个节点可先全部导入，实际只启用需要的部分。
 
 管理服务仅监听 `127.0.0.1`，代理入口也仅监听 `127.0.0.1`。订阅、节点、应用分配保存在 `data/state.json`；活动监听端口及凭据保存在 `data/active-bridges.json`，服务重启后尝试恢复。修改前自动生成 `state.json.bak`。`data/` 已加入 `.gitignore`；其中含订阅签名链接、节点凭据和本地端口凭据，请限制文件访问。
 

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const engine = process.env.MIHOMO_PATH || (process.platform === 'win32' ? 'D:\\Clash Verge\\verge-mihomo.exe' : 'mihomo');
+const engine = process.env.MIHOMO_PATH || (process.platform === 'win32' ? join(root, 'vendor', 'mihomo', 'mihomo.exe') : 'mihomo');
 const activeFile = process.env.ACTIVE_BRIDGES_FILE || join(root, 'data', 'active-bridges.json');
 const requestedLimit = Number(process.env.MAX_ACTIVE_NODES || 200);
 const maxActive = Number.isInteger(requestedLimit) ? Math.min(500, Math.max(1, requestedLimit)) : 200;
@@ -109,7 +109,7 @@ async function persist(entries) {
 async function replace(next) {
   const entries = [...next.values()];
   if (entries.length > maxActive) throw new Error(`最多同时启用 ${maxActive} 个节点，可设置 MAX_ACTIVE_NODES`);
-  if (process.platform === 'win32' && !existsSync(engine)) throw new Error('未找到 Mihomo，请设置 MIHOMO_PATH');
+  if (process.platform === 'win32' && !existsSync(engine)) throw new Error('未找到项目自带的 Mihomo，请恢复 vendor/mihomo/mihomo.exe 或设置 MIHOMO_PATH');
   const previous = [...active.values()];
   if (entries.length) {
     const directory = await mkdtemp(join(tmpdir(), 'proxy-dispatcher-check-'));
