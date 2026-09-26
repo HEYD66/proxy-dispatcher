@@ -14,6 +14,9 @@ const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=u
 let activeProbes = 0;
 
 function probeError(error, proxy, bridge) {
+  if (error?.code === 'ECONNRESET') return '上游节点主动断开连接（ECONNRESET），请重试或更换节点';
+  if (error?.code === 'ECONNREFUSED') return '代理端口拒绝连接（ECONNREFUSED），请重新启用节点';
+  if (error?.code === 'ETIMEDOUT') return '代理连接超时，请检查节点状态或更换节点';
   let message = String(error?.message || '代理探测失败');
   for (const secret of [proxy?.username, proxy?.password, bridge?.username, bridge?.password].filter(Boolean)) {
     message = message.replaceAll(secret, '[已隐藏]').replaceAll(encodeURIComponent(secret), '[已隐藏]');

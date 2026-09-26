@@ -23,7 +23,7 @@ function validate(input) {
   if (!input || typeof input.appId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(input.appId)) throw new Error('应用标识无效');
   if (typeof input.name !== 'string' || !input.name || input.name.length > 200) throw new Error('节点名称无效');
   if (typeof input.rawLine !== 'string' || input.rawLine.length > 8192 || !/^\s*-\s*\{.*\}\s*$/.test(input.rawLine) || /[\r\n\x00-\x1f]/.test(input.rawLine)) throw new Error('节点缺少 Clash 行内配置');
-  if (!/\btype\s*:\s*(ss|vmess|vless|trojan)\b/i.test(input.rawLine)) throw new Error('仅支持 SS、VMess、VLESS、Trojan 转换');
+  if (!/\btype\s*:\s*(ss|vmess|vless|trojan|anytls|hysteria2)\b/i.test(input.rawLine)) throw new Error('仅支持 SS、VMess、VLESS、Trojan、AnyTLS、Hysteria2 转换');
   return { appId: input.appId, name: input.name, rawLine: input.rawLine.trim() };
 }
 
