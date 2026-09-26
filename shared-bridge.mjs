@@ -218,7 +218,7 @@ export async function checkBridge(appId) {
   const localPortOpen = await portOpen(bridge.port);
   if (!localPortOpen) return { running: false, localPortOpen: false, upstreamReachable: false, error: '本地代理端口已关闭' };
   return new Promise(resolve => {
-    const request = http.request({ host: '127.0.0.1', port: bridge.port, method: 'GET', path: 'http://www.gstatic.com/generate_204', headers: { 'Proxy-Authorization': `Basic ${Buffer.from(`${bridge.username}:${bridge.password}`).toString('base64')}` }, timeout: 10000 }, response => {
+    const request = http.request({ host: '127.0.0.1', port: bridge.port, method: 'GET', path: 'http://www.gstatic.com/generate_204', headers: { Host: 'www.gstatic.com', 'Proxy-Authorization': `Basic ${Buffer.from(`${bridge.username}:${bridge.password}`).toString('base64')}` }, timeout: 10000 }, response => {
       response.resume();
       resolve({ running: true, localPortOpen: true, upstreamReachable: response.statusCode === 204, status: response.statusCode });
     });
