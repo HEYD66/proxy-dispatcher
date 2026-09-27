@@ -26,9 +26,8 @@ function sortPoolItems(items) {
   });
 }
 
-async function copySelectedNodes() {
-  const selected = state.proxies.filter(p => selectedProbeIds.has(p.id) && !isSubscriptionNotice(p));
-  if (!selected.length) return toast('请先勾选要复制的节点');
+async function copyNodeSet(selected, scope) {
+  if (!selected.length) return toast(scope === '已选' ? '请先勾选要复制的节点' : '当前列表没有可复制的节点');
   const seen = new Set(), lines = [];
   for (const group of sourceGroups(selected)) {
     for (const p of sortPoolItems(group.items)) {
@@ -39,9 +38,11 @@ async function copySelectedNodes() {
       else if (directExportable(p)) lines.push(formatProxy(p));
     }
   }
-  if (!lines.length) return toast(`已选 ${selected.length} 个节点，但都尚不可复制；请先启用本地端口`);
-  if (await copyText(lines.join('\n'))) toast(`已复制 ${lines.length} 个节点，跳过 ${selected.length - lines.length} 个未启用或不可导出的节点`);
+  if (!lines.length) return toast(`${scope} ${selected.length} 个节点，但都尚不可复制；加密节点请先启用本地端口`);
+  if (await copyText(lines.join('\n'))) toast(`已复制${scope}中的 ${lines.length} 个节点，跳过 ${selected.length - lines.length} 个未启用或不可导出的节点`);
 }
+const copySelectedNodes = () => copyNodeSet(state.proxies.filter(p => selectedProbeIds.has(p.id) && !isSubscriptionNotice(p)), '已选');
+const copyVisibleNodes = () => copyNodeSet(filteredProxies().filter(p => !isSubscriptionNotice(p)), '当前列表');
 
 function sourceGroups(rows) {
   const groups = new Map(state.sources.map(source => [source.id, { id: source.id, name: source.name, items: [] }]));
@@ -314,6 +315,7 @@ $('#pool-view-list').onclick = () => { poolViewMode = 'list'; localStorage.setIt
 $('#proxy-sort').value = poolSortMode;
 $('#proxy-sort').onchange = event => { poolSortMode = event.target.value; localStorage.setItem('pd_pool_sort', poolSortMode); renderProxies(); };
 $('#copy-selected').onclick = copySelectedNodes;
+$('#copy-visible').onclick = copyVisibleNodes;
 $('#available-only').onclick = () => { availableOnly = !availableOnly; localStorage.setItem('pd_available_only', availableOnly ? '1' : '0'); renderProxies(); };
 $('#app-view-cards').onclick = () => { appViewMode = 'cards'; localStorage.setItem('pd_app_view', appViewMode); renderApps(); };
 $('#app-view-list').onclick = () => { appViewMode = 'list'; localStorage.setItem('pd_app_view', appViewMode); renderApps(); };
