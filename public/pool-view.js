@@ -1,6 +1,7 @@
 /* View-only state stays in this browser; subscriptions and assignments stay on the server. */
 let poolViewMode = localStorage.getItem('pd_pool_view') === 'list' ? 'list' : 'cards';
 let appViewMode = localStorage.getItem('pd_app_view') === 'list' ? 'list' : 'cards';
+let poolSortMode = ['latency-asc', 'latency-desc'].includes(localStorage.getItem('pd_pool_sort')) ? localStorage.getItem('pd_pool_sort') : 'original';
 let collapsedSources;
 try { collapsedSources = new Set(JSON.parse(localStorage.getItem('pd_collapsed_sources') || '[]')); }
 catch { collapsedSources = new Set(); }
@@ -14,6 +15,33 @@ const checkedTime = p => p.lastProbe?.checkedAt ? new Date(p.lastProbe.checkedAt
 const assignedApps = p => state.apps.filter(app => app.proxyId === p.id);
 const assignmentBadge = p => { const apps=assignedApps(p); return apps.length ? `<span class="assignment-badge" title="${esc(apps.map(a=>a.name).join('、'))}">已分配 ${apps.length}</span>` : ''; };
 const probeRank = p => p.lastProbe?.ip ? 0 : p.lastProbe?.error ? 2 : 1;
+function sortPoolItems(items) {
+  if (poolSortMode === 'original') return items;
+  const delay = p => !p.lastProbe?.error && Number.isFinite(p.lastProbe?.latencyMs) ? p.lastProbe.latencyMs : null;
+  return [...items].sort((a, b) => {
+    const first = delay(a), second = delay(b);
+    if (first === null) return second === null ? 0 : 1;
+    if (second === null) return -1;
+    return poolSortMode === 'latency-asc' ? first - second : second - first;
+  });
+}
+
+async function copySelectedNodes() {
+  const selected = state.proxies.filter(p => selectedProbeIds.has(p.id) && !isSubscriptionNotice(p));
+  if (!selected.length) return toast('请先勾选要复制的节点');
+  const seen = new Set(), lines = [];
+  for (const group of sourceGroups(selected)) {
+    for (const p of sortPoolItems(group.items)) {
+      if (seen.has(p.id)) continue;
+      seen.add(p.id);
+      const bridge = bridgeFor(`pool-${p.id}`);
+      if (bridge) lines.push(formatBridge(bridge));
+      else if (directExportable(p)) lines.push(formatProxy(p));
+    }
+  }
+  if (!lines.length) return toast(`已选 ${selected.length} 个节点，但都尚不可复制；请先启用本地端口`);
+  if (await copyText(lines.join('\n'))) toast(`已复制 ${lines.length} 个节点，跳过 ${selected.length - lines.length} 个未启用或不可导出的节点`);
+}
 
 function sourceGroups(rows) {
   const groups = new Map(state.sources.map(source => [source.id, { id: source.id, name: source.name, items: [] }]));
@@ -55,7 +83,7 @@ function nodeCard(p) {
 
 function nodeListRow(p) {
   const status = nodeConnectivity(p);
-  return `<tr><td><input type="checkbox" aria-label="选择 ${esc(p.name)}" data-probe-select="${esc(p.id)}" ${selectedProbeIds.has(p.id) ? 'checked' : ''} ${probingNodes.has(p.id) || isSubscriptionNotice(p) ? 'disabled' : ''}/></td><td><div class="list-node-name" title="${esc(p.name)}">${esc(p.name)} ${assignmentBadge(p)}</div><span class="list-protocol">${esc(p.protocol)}</span></td><td class="${p.lastProbe?.error ? 'status-error' : p.lastProbe?.ip ? 'status-good' : ''}" title="${esc(p.lastProbe?.error || '')}">${esc(status)}<small>${esc(checkedTime(p))}</small></td><td class="${p.lastProbe?.error ? 'status-error' : p.lastProbe?.ip ? 'status-good' : ''}">${esc(nodeIp(p))}</td><td>${esc(nodeSpeed(p))}</td><td><div class="list-actions">${nodeActionButtons(p)}</div></td></tr>`;
+  return `<tr><td><input type="checkbox" aria-label="选择 ${esc(p.name)}" data-probe-select="${esc(p.id)}" ${selectedProbeIds.has(p.id) ? 'checked' : ''} ${probingNodes.has(p.id) || isSubscriptionNotice(p) ? 'disabled' : ''}/></td><td><div class="list-node-name" title="${esc(p.name)}">${esc(p.name)} ${assignmentBadge(p)}</div><span class="list-protocol">${esc(p.protocol)}</span></td><td class="${p.lastProbe?.error ? 'status-error' : p.lastProbe?.ip ? 'status-good' : ''}" title="${esc(p.lastProbe?.error || '')}">${esc(status)}<span class="list-delay">${esc(nodeDelay(p))}</span><small>${esc(checkedTime(p))}</small></td><td class="${p.lastProbe?.error ? 'status-error' : p.lastProbe?.ip ? 'status-good' : ''}">${esc(nodeIp(p))}</td><td>${esc(nodeSpeed(p))}</td><td><div class="list-actions">${nodeActionButtons(p)}</div></td></tr>`;
 }
 
 function nodeTable(items) {
@@ -78,12 +106,17 @@ function wireNodeActions(root) {
 }
 
 window.renderProxiesEnhanced = function () {
+  const existingIds = new Set(state.proxies.map(p => p.id));
+  for (const id of selectedProbeIds) if (!existingIds.has(id)) selectedProbeIds.delete(id);
   const rows = filteredProxies();
   const groups = sourceGroups(rows);
   const searching = Boolean($('#proxy-search').value.trim());
   $('#proxy-count').textContent = `${rows.filter(p=>!isSubscriptionNotice(p)).length} / ${state.proxies.filter(p=>!isSubscriptionNotice(p)).length} 个节点 · ${rows.filter(isSubscriptionNotice).length} 条订阅信息 · ${state.bridges.length} 个端口已启用`;
   $('#proxy-empty').style.display = rows.length ? 'none' : 'block';
   $('#selected-proxy-count').textContent = `已选 ${selectedProbeIds.size} 个`;
+  $('#copy-selected').disabled = selectedProbeIds.size === 0;
+  $('#available-only').setAttribute('aria-pressed', String(availableOnly));
+  $('#available-only').textContent = availableOnly ? '显示全部节点' : '只看可用节点';
   const selectableRows = rows.filter(p => !isSubscriptionNotice(p));
   const selectedVisible = selectableRows.filter(p => selectedProbeIds.has(p.id)).length;
   const selectAll = $('#select-all-proxies');
@@ -97,7 +130,7 @@ window.renderProxiesEnhanced = function () {
   const grid = $('#proxy-grid');
   grid.innerHTML = groups.map(group => {
     const collapsed = !searching && collapsedSources.has(group.id);
-    const nodes=group.items.filter(p=>!isSubscriptionNotice(p));
+    const nodes=sortPoolItems(group.items.filter(p=>!isSubscriptionNotice(p)));
     const notices=group.items.filter(isSubscriptionNotice);
     const selected = nodes.filter(p => selectedProbeIds.has(p.id)).length;
     const section=items=>poolViewMode === 'cards' ? `<div class="proxy-grid">${items.map(nodeCard).join('')}</div>` : nodeTable(items);
@@ -278,6 +311,10 @@ $('#confirm-assign-node').onclick = async () => {
 };
 $('#pool-view-cards').onclick = () => { poolViewMode = 'cards'; localStorage.setItem('pd_pool_view', poolViewMode); renderProxies(); };
 $('#pool-view-list').onclick = () => { poolViewMode = 'list'; localStorage.setItem('pd_pool_view', poolViewMode); renderProxies(); };
+$('#proxy-sort').value = poolSortMode;
+$('#proxy-sort').onchange = event => { poolSortMode = event.target.value; localStorage.setItem('pd_pool_sort', poolSortMode); renderProxies(); };
+$('#copy-selected').onclick = copySelectedNodes;
+$('#available-only').onclick = () => { availableOnly = !availableOnly; localStorage.setItem('pd_available_only', availableOnly ? '1' : '0'); renderProxies(); };
 $('#app-view-cards').onclick = () => { appViewMode = 'cards'; localStorage.setItem('pd_app_view', appViewMode); renderApps(); };
 $('#app-view-list').onclick = () => { appViewMode = 'list'; localStorage.setItem('pd_app_view', appViewMode); renderApps(); };
 $('#collapse-sources').onclick = () => {
