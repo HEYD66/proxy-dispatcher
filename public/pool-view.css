@@ -19,7 +19,7 @@
 .proxy-source-group .proxy-card-preview{color:#aeb2c1}
 .proxy-table-wrap,.app-table-wrap{overflow-x:auto;border:1px solid #414354;border-radius:9px;background:#292a36}
 .proxy-table,.app-table{width:100%;border-collapse:collapse;text-align:left;font-size:11px}
-.proxy-table{min-width:940px;table-layout:fixed}
+.proxy-table{min-width:0;table-layout:fixed}
 .app-table{min-width:970px}
 .proxy-table th,.app-table th{background:#303442;color:#bdcad8;font-weight:500;white-space:nowrap;padding:10px 11px;border-bottom:1px solid #485061}
 .proxy-table td,.app-table td{padding:9px 11px;border-bottom:1px solid #3b4050;vertical-align:middle}
@@ -111,4 +111,15 @@
 #assign-node-modal .app-select{display:block;margin-top:7px;width:100%}
 @media(max-width:1100px){.app-table th:nth-child(6),.app-table td:nth-child(6){display:none}.app-table th:nth-child(2){width:40%}.app-table th:nth-child(7){width:18%}}
 @media(max-width:900px){.filter-row{gap:10px}.view-controls{justify-content:flex-start}.app-heading-actions{width:100%;justify-content:space-between}.picker-node{grid-template-columns:minmax(0,2fr) 65px 105px 60px 70px}}
+@media (min-width:901px) and (max-width:1100px){
+  .proxy-table th,.proxy-table td{padding-left:6px;padding-right:6px}
+  .proxy-table th:first-child,.proxy-table td:first-child{width:30px}
+  .proxy-table th:nth-child(2){width:21%}
+  .proxy-table th:nth-child(3){width:90px}
+  .proxy-table th:nth-child(4){width:100px}
+  .proxy-table th:nth-child(5){width:58px}
+  .proxy-table th:nth-child(6){width:36%}
+  .proxy-table .list-actions{min-width:0;gap:3px}
+  .proxy-table .list-actions .copy-btn{font-size:9px;padding:4px 5px}
+}
 @media(max-width:650px){.source-select{font-size:0}.source-select input{font-size:initial}.proxy-card-head .probe-result{max-width:42%}}
