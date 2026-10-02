@@ -1,5 +1,16 @@
 const state = { sources: JSON.parse(localStorage.getItem('pd_sources') || '[]'), proxies: JSON.parse(localStorage.getItem('pd_proxies') || '[]'), apps: JSON.parse(localStorage.getItem('pd_apps') || '[]'), bridges: [], format: 'hostportuserpass' };
 const $ = (s) => document.querySelector(s);
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => {
+  const url = typeof input === 'string' ? input : input?.url || '';
+  const method = String(init.method || input?.method || 'GET').toUpperCase();
+  if (url.startsWith('/api/') && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const headers = new Headers(init.headers || (input instanceof Request ? input.headers : undefined));
+    headers.set('X-Requested-With', 'ProxyDispatcher');
+    init = { ...init, headers };
+  }
+  return nativeFetch(input, init);
+};
 const esc = (s='') => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 let saveQueue = Promise.resolve();

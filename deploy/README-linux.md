@@ -28,7 +28,7 @@ sudo systemctl enable --now proxy-dispatcher
 
 ## Nginx 与防火墙
 
-复制 `nginx.proxy-dispatcher.conf.example` 到 Nginx 配置目录，替换域名和证书路径，使用 `htpasswd` 创建管理账号，然后 reload Nginx。防火墙只开放 `443/tcp` 和代理端口范围；示例环境文件的范围是 `21000-21250/tcp`。如果改了范围，防火墙规则也要同步修改。
+复制 `nginx.proxy-dispatcher.conf.example` 到 Nginx 配置目录，替换域名和证书路径，使用 `htpasswd` 创建管理账号，然后 reload Nginx。管理 API 还要求受信任的浏览器请求头，页面自身会自动添加；直接脚本调用会被拒绝。服务器模式按客户端 IP 对管理 API 限流，订阅拉取每分钟最多 30 次。订阅 URL 可能包含 Token，示例配置已关闭 `/api/fetch` 的 Nginx 访问日志。防火墙只开放 `443/tcp` 和代理端口范围；示例环境文件的范围是 `21000-21250/tcp`。如果改了范围，防火墙规则也要同步修改。
 
 ```bash
 sudo htpasswd -c /etc/nginx/.htpasswd-proxy-dispatcher admin
@@ -51,4 +51,3 @@ ss -lntp | grep -E ':4173|:21[0-2][0-9]{2}'
 先导入少量节点，启用并测试 5 到 10 个端口，再批量启用。2 核 2GB 机器可以保存和管理 100 个以上节点，但同时高流量转发能力取决于带宽、连接数和协议加密开销，需要按实际线路压测。`MAX_ACTIVE_NODES` 默认 200，可先设置为 100 控制并发转发规模。
 
 升级时先备份 `/var/lib/proxy-dispatcher/data/`，替换 `/opt/proxy-dispatcher` 代码和 Mihomo 二进制，执行 `npm ci --omit=dev` 后重启服务。回滚时恢复代码和数据备份，再 `systemctl restart`。
-

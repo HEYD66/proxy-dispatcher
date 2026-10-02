@@ -26,6 +26,37 @@ setLogRetentionDays(currentSettings.logRetentionDays);
 setCoreLogSink((level, message) => logEvent(level, 'Mihomo', message));
 const desktopRequests = new Map();
 let desktopRequestId = 0;
+const rateBuckets = new Map();
+const mutationMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function clientAddress(req) {
+  const forwarded = String(req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwarded || req.socket.remoteAddress || 'unknown';
+}
+
+function rateLimit(req, pathname) {
+  if (!serverMode || !pathname.startsWith('/api/')) return null;
+  const now = Date.now();
+  const windowMs = 60_000;
+  const limit = pathname === '/api/fetch' ? 30 : 180;
+  const key = `${clientAddress(req)}|${pathname === '/api/fetch' ? 'fetch' : 'api'}`;
+  const previous = rateBuckets.get(key);
+  if (!previous || now - previous.startedAt >= windowMs) {
+    rateBuckets.set(key, { startedAt: now, count: 1 });
+  } else {
+    previous.count += 1;
+    if (previous.count > limit) return Math.ceil((windowMs - (now - previous.startedAt)) / 1000);
+  }
+  if (rateBuckets.size > 10000) {
+    for (const [bucketKey, bucket] of rateBuckets) if (now - bucket.startedAt >= windowMs) rateBuckets.delete(bucketKey);
+  }
+  return null;
+}
+
+function requireBrowserMutation(req, pathname) {
+  return serverMode && pathname.startsWith('/api/') && mutationMethods.has(req.method) && req.headers['x-requested-with'] !== 'ProxyDispatcher';
+}
+
 process.on('message', message => {
   if (message?.type !== 'settings-applied') return;
   const pending = desktopRequests.get(message.requestId);
@@ -88,6 +119,13 @@ const server = http.createServer(async (req, res) => {
     const ownHost = `${host}:${port}`;
     if (!serverMode && (req.headers.host !== ownHost || (req.headers.origin && req.headers.origin !== `http://${ownHost}`))) return send(res, 403, { error: '只允许本机同源访问' });
     const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+    const retryAfter = rateLimit(req, requestUrl.pathname);
+    if (retryAfter) {
+      res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Retry-After': String(retryAfter) });
+      res.end(JSON.stringify({ error: '请求过于频繁，请稍后再试' }));
+      return;
+    }
+    if (requireBrowserMutation(req, requestUrl.pathname)) return send(res, 403, { error: '缺少受信任的浏览器请求头' });
     if (requestUrl.pathname === '/api/health') return send(res, 200, { ok: true, port });
     if (requestUrl.pathname === '/api/desktop/shutdown' && req.method === 'POST') {
       if (!process.env.DESKTOP_CONTROL_TOKEN || req.headers['x-desktop-token'] !== process.env.DESKTOP_CONTROL_TOKEN) return send(res, 403, { error: '无权关闭桌面服务' });

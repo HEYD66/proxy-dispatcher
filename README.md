@@ -52,4 +52,4 @@ npm.cmd start
 
 服务器部署文件位于 `deploy/`。管理服务默认仍绑定 `127.0.0.1:4173`，使用 Nginx 的 HTTPS 和 Basic Auth 对外提供管理页面；共享 Mihomo 代理端口通过 `PROXY_LISTEN=0.0.0.0` 对外提供，每个端口使用独立的随机认证。服务器必须使用与 Linux CPU 架构匹配的 Mihomo 二进制，并通过 `MIHOMO_PATH` 指定。完整步骤见 [`deploy/README-linux.md`](deploy/README-linux.md)。
 
-服务器模式通过 `SERVER_MODE=1` 放宽管理页面的 Host/Origin 检查，因为浏览器会从 Nginx 域名访问本机 Node 服务；Node 本身仍只监听回环地址。示例使用 `PROXY_PORT_MIN=21000`、`PROXY_PORT_MAX=21250`，防火墙只放行该端口段。当前没有在远程 2 核 2GB 主机上做吞吐容量承诺，部署后应先启用少量节点观察带宽、连接数和内存，再逐步增加 `MAX_ACTIVE_NODES`。
+服务器模式通过 `SERVER_MODE=1` 放宽管理页面的 Host/Origin 检查，因为浏览器会从 Nginx 域名访问本机 Node 服务；Node 本身仍只监听回环地址。服务器模式的变更 API 需要页面自动添加的受信任请求头，并按客户端 IP 限流，订阅拉取每分钟最多 30 次；Nginx 示例关闭 `/api/fetch` 访问日志，避免订阅 Token 进入日志。示例使用 `PROXY_PORT_MIN=21000`、`PROXY_PORT_MAX=21250`，防火墙只放行该端口段。当前没有在远程 2 核 2GB 主机上做吞吐容量承诺，部署后应先启用少量节点观察带宽、连接数和内存，再逐步增加 `MAX_ACTIVE_NODES`。
