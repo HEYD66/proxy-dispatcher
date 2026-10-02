@@ -1,0 +1,24 @@
+[Unit]
+Description=Proxy Dispatcher server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=proxy-dispatcher
+Group=proxy-dispatcher
+WorkingDirectory=/opt/proxy-dispatcher
+EnvironmentFile=/etc/proxy-dispatcher/proxy-dispatcher.env
+ExecStart=/usr/bin/node /opt/proxy-dispatcher/server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/proxy-dispatcher
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+

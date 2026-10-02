@@ -13,6 +13,11 @@ const engine = process.env.MIHOMO_PATH || (process.platform === 'win32' ? join(r
 const activeFile = process.env.ACTIVE_BRIDGES_FILE || join(root, 'data', 'active-bridges.json');
 const requestedLimit = Number(process.env.MAX_ACTIVE_NODES || 200);
 const maxActive = Number.isInteger(requestedLimit) ? Math.min(500, Math.max(1, requestedLimit)) : 200;
+const proxyListen = process.env.PROXY_LISTEN || '127.0.0.1';
+const configuredPortMin = Number(process.env.PROXY_PORT_MIN || 0);
+const configuredPortMax = Number(process.env.PROXY_PORT_MAX || 0);
+const portMin = Number.isInteger(configuredPortMin) && configuredPortMin >= 1024 && configuredPortMin <= 65535 ? configuredPortMin : 0;
+const portMax = portMin && Number.isInteger(configuredPortMax) && configuredPortMax >= portMin && configuredPortMax <= 65535 ? configuredPortMax : portMin ? Math.min(65535, portMin + Math.max(maxActive, 200) - 1) : 0;
 const active = new Map();
 let runtime = null;
 let queue = Promise.resolve();
@@ -30,6 +35,12 @@ function validate(input) {
 }
 
 async function freePort(reserved) {
+  if (portMin) {
+    for (let port = portMin; port <= portMax; port++) {
+      if (!reserved.has(port) && await portAvailable(port)) { reserved.add(port); return port; }
+    }
+    throw new Error(`代理端口范围 ${portMin}-${portMax} 没有空闲端口`);
+  }
   for (let attempt = 0; attempt < 20; attempt++) {
     const port = await new Promise((resolve, reject) => {
       const server = net.createServer();
@@ -57,8 +68,9 @@ function renameProxy(line, name) {
 
 function configText(entries) {
   const proxies = entries.map((entry, i) => `  ${renameProxy(entry.rawLine, `node-${i + 1}`)}`).join('\n');
-  const listeners = entries.map((entry, i) => `  - name: ${JSON.stringify(entry.appId)}\n    type: mixed\n    port: ${entry.port}\n    listen: 127.0.0.1\n    proxy: ${JSON.stringify(`node-${i + 1}`)}\n    users:\n      - username: ${JSON.stringify(entry.username)}\n        password: ${JSON.stringify(entry.password)}`).join('\n');
-  return `allow-lan: false\nbind-address: 127.0.0.1\nmode: rule\nlog-level: warning\nipv6: true\ndns:\n  enable: true\n  ipv6: true\n  enhanced-mode: redir-host\n  use-hosts: false\n  use-system-hosts: false\n  default-nameserver:\n    - 223.5.5.5\n    - 8.8.8.8\n  nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\n  proxy-server-nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\nproxies:\n${proxies}\nlisteners:\n${listeners}\nrules:\n  - MATCH,DIRECT\n`;
+  const listeners = entries.map((entry, i) => `  - name: ${JSON.stringify(entry.appId)}\n    type: mixed\n    port: ${entry.port}\n    listen: ${proxyListen}\n    proxy: ${JSON.stringify(`node-${i + 1}`)}\n    users:\n      - username: ${JSON.stringify(entry.username)}\n        password: ${JSON.stringify(entry.password)}`).join('\n');
+  const lan = proxyListen !== '127.0.0.1' && proxyListen !== 'localhost' ? 'true' : 'false';
+  return `allow-lan: ${lan}\nbind-address: ${proxyListen}\nmode: rule\nlog-level: warning\nipv6: true\ndns:\n  enable: true\n  ipv6: true\n  enhanced-mode: redir-host\n  use-hosts: false\n  use-system-hosts: false\n  default-nameserver:\n    - 223.5.5.5\n    - 8.8.8.8\n  nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\n  proxy-server-nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\nproxies:\n${proxies}\nlisteners:\n${listeners}\nrules:\n  - MATCH,DIRECT\n`;
 }
 
 function configuredText(entries) {

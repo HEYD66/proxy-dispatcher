@@ -48,6 +48,8 @@ npm.cmd start
 
 未带账号密码的原生代理不能填入要求四段式认证的目标应用；请按目标应用支持的无认证格式另行配置。
 
-## Linux 部署边界
+## Linux 服务器版
 
-当前版本的管理 API 和代理端口都只绑定回环地址，适合 Windows 本机验证或 Linux 本机使用。**尚未实现公网代理分发、管理 API 认证、访问白名单、systemd 守护和 2 核 2 GB 机器的吞吐容量验证**。不能通过修改监听地址直接暴露到公网；对外服务需要先补鉴权、访问控制和带宽监控。Linux 可用 `MIHOMO_PATH` 指定内核、`STATE_FILE` 与 `ACTIVE_BRIDGES_FILE` 指定持久化位置。
+服务器部署文件位于 `deploy/`。管理服务默认仍绑定 `127.0.0.1:4173`，使用 Nginx 的 HTTPS 和 Basic Auth 对外提供管理页面；共享 Mihomo 代理端口通过 `PROXY_LISTEN=0.0.0.0` 对外提供，每个端口使用独立的随机认证。服务器必须使用与 Linux CPU 架构匹配的 Mihomo 二进制，并通过 `MIHOMO_PATH` 指定。完整步骤见 [`deploy/README-linux.md`](deploy/README-linux.md)。
+
+服务器模式通过 `SERVER_MODE=1` 放宽管理页面的 Host/Origin 检查，因为浏览器会从 Nginx 域名访问本机 Node 服务；Node 本身仍只监听回环地址。示例使用 `PROXY_PORT_MIN=21000`、`PROXY_PORT_MAX=21250`，防火墙只放行该端口段。当前没有在远程 2 核 2GB 主机上做吞吐容量承诺，部署后应先启用少量节点观察带宽、连接数和内存，再逐步增加 `MAX_ACTIVE_NODES`。

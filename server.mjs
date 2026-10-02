@@ -13,6 +13,9 @@ import { loadSettings, saveSettings, validateSettings, settingsFile } from './se
 const root = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = join(root, 'public');
 const port = Number(process.env.PORT || 4173);
+const host = process.env.HOST || '127.0.0.1';
+const serverMode = process.env.SERVER_MODE === '1';
+if (serverMode && !['127.0.0.1', 'localhost', '::1'].includes(host)) throw new Error('SERVER_MODE 下管理服务必须绑定回环地址，请使用 Nginx 或其他反向代理对外提供访问');
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8' };
 let activeProbes = 0;
 let currentSettings;
@@ -82,8 +85,8 @@ async function fetchSubscription(url) {
 
 const server = http.createServer(async (req, res) => {
   try {
-    const ownHost = `127.0.0.1:${port}`;
-    if (req.headers.host !== ownHost || (req.headers.origin && req.headers.origin !== `http://${ownHost}`)) return send(res, 403, { error: '只允许本机同源访问' });
+    const ownHost = `${host}:${port}`;
+    if (!serverMode && (req.headers.host !== ownHost || (req.headers.origin && req.headers.origin !== `http://${ownHost}`))) return send(res, 403, { error: '只允许本机同源访问' });
     const requestUrl = new URL(req.url, `http://${req.headers.host}`);
     if (requestUrl.pathname === '/api/health') return send(res, 200, { ok: true, port });
     if (requestUrl.pathname === '/api/desktop/shutdown' && req.method === 'POST') {
@@ -245,7 +248,7 @@ try {
   console.error(`Active listener restore failed: ${error.message}`);
   await logEvent('error', '启动', '活动代理端口恢复失败');
 }
-server.listen(port, '127.0.0.1', () => console.log(`Proxy Dispatcher running at http://127.0.0.1:${port}`));
+server.listen(port, host, () => console.log(`Proxy Dispatcher running at http://${host}:${port}${serverMode ? ' [server mode]' : ''}`));
 const retentionTimer = setInterval(() => { if (currentSettings.logRetentionDays) pruneOldEvents().catch(() => {}); }, 86400000);
 retentionTimer.unref();
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, async () => {
