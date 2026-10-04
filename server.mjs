@@ -140,6 +140,7 @@ const server = http.createServer(async (req, res) => {
       const version = spawnSync(core, ['-v'], { windowsHide: true, encoding: 'utf8', timeout: 3000 });
       return send(res, 200, {
         settings: currentSettings,
+        serverMode,
         desktopAvailable: Boolean(process.send),
         coreVersion: (version.stdout || '').trim().split(/\r?\n/)[0] || '无法读取',
         dataDirectory: dirname(settingsFile),

@@ -35,6 +35,12 @@
   }
 
   function showInfo(data) {
+    if (data.serverMode) {
+      document.querySelector('.sidebar-foot span:last-child').textContent = '服务器模式 · 数据保存在服务器';
+      byId('clear-data').textContent = '清空服务器数据';
+      document.querySelector('#view-apps .section-head > div > p:last-child').textContent = '按出口 IP、延迟和速率选择节点；配置保存在服务器。';
+      document.querySelector('#view-logs .section-head > div > p:last-child').textContent = '记录订阅请求、代理启停、节点检测及共享内核警告。日志保存在服务器。';
+    }
     paths = { data: data.dataDirectory, log: data.logFile };
     byId('setting-core-version').textContent = data.coreVersion;
     byId('setting-active-ports').textContent = `${data.runtime.activeListeners} 个端口`;
