@@ -1,7 +1,9 @@
-const state = { sources: JSON.parse(localStorage.getItem('pd_sources') || '[]'), proxies: JSON.parse(localStorage.getItem('pd_proxies') || '[]'), apps: JSON.parse(localStorage.getItem('pd_apps') || '[]'), bridges: [], format: 'hostportuserpass' };
+const isServerMode = document.body.dataset.serverMode === '1';
+if (isServerMode) ['pd_sources', 'pd_proxies', 'pd_apps'].forEach(key => localStorage.removeItem(key));
+const state = { sources: isServerMode ? [] : JSON.parse(localStorage.getItem('pd_sources') || '[]'), proxies: isServerMode ? [] : JSON.parse(localStorage.getItem('pd_proxies') || '[]'), apps: isServerMode ? [] : JSON.parse(localStorage.getItem('pd_apps') || '[]'), bridges: [], format: 'hostportuserpass' };
 const $ = (s) => document.querySelector(s);
 const nativeFetch = window.fetch.bind(window);
-window.fetch = (input, init = {}) => {
+window.fetch = async (input, init = {}) => {
   const url = typeof input === 'string' ? input : input?.url || '';
   const method = String(init.method || input?.method || 'GET').toUpperCase();
   if (url.startsWith('/api/') && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
@@ -9,12 +11,17 @@ window.fetch = (input, init = {}) => {
     headers.set('X-Requested-With', 'ProxyDispatcher');
     init = { ...init, headers };
   }
-  return nativeFetch(input, init);
+  const response = await nativeFetch(input, init);
+  if (isServerMode && url.startsWith('/api/') && response.status === 401) {
+    location.replace('/login');
+    throw new Error('登录已过期，请重新登录');
+  }
+  return response;
 };
 const esc = (s='') => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 let saveQueue = Promise.resolve();
-const save = () => { const snapshot=JSON.parse(JSON.stringify({sources:state.sources,proxies:state.proxies,apps:state.apps})); localStorage.setItem('pd_sources', JSON.stringify(snapshot.sources)); localStorage.setItem('pd_proxies', JSON.stringify(snapshot.proxies)); localStorage.setItem('pd_apps', JSON.stringify(snapshot.apps)); renderAll(); const task=saveQueue.then(async()=>{const response=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(snapshot)});if(!response.ok)throw new Error((await response.json()).error||'服务端保存失败');});saveQueue=task.catch(error=>toast(error.message));return task; };
+const save = () => { const snapshot=JSON.parse(JSON.stringify({sources:state.sources,proxies:state.proxies,apps:state.apps})); if(!isServerMode){localStorage.setItem('pd_sources', JSON.stringify(snapshot.sources)); localStorage.setItem('pd_proxies', JSON.stringify(snapshot.proxies)); localStorage.setItem('pd_apps', JSON.stringify(snapshot.apps));} renderAll(); const task=saveQueue.then(async()=>{const response=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(snapshot)});if(!response.ok)throw new Error((await response.json()).error||'服务端保存失败');});saveQueue=task.catch(error=>toast(error.message));return task; };
 const toast = (message) => { const el=$('#toast'); el.textContent=message; el.classList.add('show'); clearTimeout(window.__toast); window.__toast=setTimeout(()=>el.classList.remove('show'),2200); };
 const bridgeProtocols = new Set(['ss','ssr','vmess','vless','trojan','anytls','hysteria','hysteria2','tuic','snell','wireguard','ssh']);
 const bridgeable = (p) => Boolean(p && bridgeProtocols.has(p.protocol));

@@ -9,7 +9,7 @@ const lock = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8'))
 const output = join(root, 'dist', `ProxyDispatcher-${manifest.version}-linux`);
 if (existsSync(output)) throw new Error('Linux 产物目录已存在，请先备份或选择新的版本号');
 await mkdir(output, { recursive: true });
-for (const name of ['server.mjs', 'shared-bridge.mjs', 'event-log.mjs', 'settings-store.mjs', 'store.mjs', 'proxy-probe.mjs', 'README.md', 'public', 'deploy']) {
+for (const name of ['server.mjs', 'server-auth.mjs', 'shared-bridge.mjs', 'event-log.mjs', 'settings-store.mjs', 'store.mjs', 'proxy-probe.mjs', 'README.md', 'public', 'deploy']) {
   await cp(join(root, name), join(output, name), { recursive: true });
 }
 for (const [name, details] of Object.entries(lock.packages)) {

@@ -9,6 +9,7 @@ import { loadState, saveState, validateState } from './store.mjs';
 import { probeProxy } from './proxy-probe.mjs';
 import { logEvent, readEvents, setLogRetentionDays, pruneOldEvents } from './event-log.mjs';
 import { loadSettings, saveSettings, validateSettings, settingsFile } from './settings-store.mjs';
+import { createServerAuth } from './server-auth.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const publicDir = join(root, 'public');
@@ -16,6 +17,7 @@ const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || '127.0.0.1';
 const serverMode = process.env.SERVER_MODE === '1';
 if (serverMode && !['127.0.0.1', 'localhost', '::1'].includes(host)) throw new Error('SERVER_MODE 下管理服务必须绑定回环地址，请使用 Nginx 或其他反向代理对外提供访问');
+const auth = serverMode ? await createServerAuth({ file: process.env.AUTH_FILE || join(dirname(settingsFile), 'admin-auth.json'), port, tunnelPort: Number(process.env.AUTH_TUNNEL_PORT || 17473), publicOrigin: process.env.PUBLIC_ORIGIN || '' }) : null;
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8' };
 let activeProbes = 0;
 let currentSettings;
@@ -96,10 +98,12 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
   res.end(typeof body === 'string' ? body : JSON.stringify(body));
 }
 
-async function readJson(req) {
-  let body = '';
-  for await (const chunk of req) { body += chunk; if (body.length > 8000000) throw new Error('请求过大'); }
-  return JSON.parse(body || '{}');
+async function readJson(req, maxBytes = 8000000) {
+  const chunks = [];
+  let bytes = 0;
+  for await (const chunk of req) { bytes += chunk.length; if (bytes > maxBytes) throw Object.assign(new Error('请求过大'), { status: 413 }); chunks.push(chunk); }
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
+  catch { throw Object.assign(new Error('请求不是有效的 JSON'), { status: 400 }); }
 }
 
 async function fetchSubscription(url) {
@@ -116,9 +120,16 @@ async function fetchSubscription(url) {
 
 const server = http.createServer(async (req, res) => {
   try {
+    if (serverMode) {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    }
     const ownHost = `${host}:${port}`;
     if (!serverMode && (req.headers.host !== ownHost || (req.headers.origin && req.headers.origin !== `http://${ownHost}`))) return send(res, 403, { error: '只允许本机同源访问' });
     const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+    if (auth && !auth.checkRequest(req)) return send(res, 403, { error: '只允许 HTTPS 同源访问或受信任的 SSH 隧道访问' });
     const retryAfter = rateLimit(req, requestUrl.pathname);
     if (retryAfter) {
       res.writeHead(429, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Retry-After': String(retryAfter) });
@@ -126,7 +137,29 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (requireBrowserMutation(req, requestUrl.pathname)) return send(res, 403, { error: '缺少受信任的浏览器请求头' });
-    if (requestUrl.pathname === '/api/health') return send(res, 200, { ok: true, port });
+    if (requestUrl.pathname === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, port });
+    if (requestUrl.pathname === '/api/auth/status' && req.method === 'GET') return send(res, 200, auth ? auth.status(req) : { serverMode: false, authenticated: true });
+    if (auth && requestUrl.pathname.startsWith('/api/auth/') && req.method === 'POST') {
+      if (requestUrl.pathname === '/api/auth/touch') return auth.session(req, true) ? send(res, 200, { ok: true }) : send(res, 401, { error: '请先登录' });
+      if (requestUrl.pathname === '/api/auth/logout') {
+        auth.logout(req, res);
+        await logEvent('info', '安全', '管理会话已退出');
+        return send(res, 200, { ok: true });
+      }
+      if (!['/api/auth/setup', '/api/auth/login', '/api/auth/password'].includes(requestUrl.pathname)) return send(res, 404, { error: 'Not found' });
+      if (requestUrl.pathname === '/api/auth/password' && !auth.session(req)) return send(res, 401, { error: '请先登录' });
+      if (!String(req.headers['content-type'] || '').startsWith('application/json')) return send(res, 415, { error: '只接受 JSON 请求' });
+      const body = await readJson(req, 4096);
+      if (requestUrl.pathname === '/api/auth/setup') { await auth.setup(req, res, body.password); await logEvent('info', '安全', '管理密码已创建'); }
+      if (requestUrl.pathname === '/api/auth/login') { await auth.login(req, res, body, clientAddress(req)); await logEvent('info', '安全', '管理登录成功'); }
+      if (requestUrl.pathname === '/api/auth/password') { await auth.changePassword(req, res, body, clientAddress(req)); await logEvent('info', '安全', '管理密码已更新，旧会话已失效'); }
+      return send(res, 200, { ok: true });
+    }
+    if (auth && !['/login', '/login.html', '/login.css', '/login.js'].includes(requestUrl.pathname) && !auth.session(req, !requestUrl.pathname.startsWith('/api/') || mutationMethods.has(req.method))) {
+      if (requestUrl.pathname.startsWith('/api/')) return send(res, 401, { error: '登录已过期，请重新登录' });
+      res.writeHead(303, { Location: '/login', 'Cache-Control': 'no-store' });
+      return res.end();
+    }
     if (requestUrl.pathname === '/api/desktop/shutdown' && req.method === 'POST') {
       if (!process.env.DESKTOP_CONTROL_TOKEN || req.headers['x-desktop-token'] !== process.env.DESKTOP_CONTROL_TOKEN) return send(res, 403, { error: '无权关闭桌面服务' });
       send(res, 200, { stopping: true });
@@ -266,15 +299,17 @@ const server = http.createServer(async (req, res) => {
       await logEvent('warning', '代理', `已停用全部 ${result.stopped} 个端口`);
       return send(res, 200, result);
     }
-    const pathname = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname;
+    const pathname = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname === '/login' ? '/login.html' : requestUrl.pathname;
     const file = normalize(join(publicDir, pathname));
     if (!file.startsWith(publicDir) || !existsSync(file)) return send(res, 404, { error: 'Not found' });
-    const data = await readFile(file);
+    let data = await readFile(file);
+    if (serverMode && pathname === '/index.html') data = Buffer.from(data.toString('utf8').replace('<body>', '<body data-server-mode="1">'));
     res.writeHead(200, { 'Content-Type': mime[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
     res.end(data);
   } catch (error) {
     if (req.url?.startsWith('/api/') && !req.url.startsWith('/api/logs') && !req.url.startsWith('/api/telemetry')) logEvent('error', '服务', `请求失败：${error?.code || error?.name || 'Error'}`);
-    send(res, 500, { error: error.name === 'AbortError' ? '订阅请求超时' : error.message });
+    if (error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
+    send(res, error.status || 500, { error: error.name === 'AbortError' ? '订阅请求超时' : error.message });
   }
 });
 

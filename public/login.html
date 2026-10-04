@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>安全登录 · 代理分发器</title>
+  <link rel="stylesheet" href="/login.css" />
+</head>
+<body>
+  <main class="login-panel">
+    <div class="brand-mark" aria-hidden="true">↗</div>
+    <p class="eyebrow">PROXY DISPATCHER</p>
+    <h1 id="login-title">安全登录</h1>
+    <p id="login-description">正在检查管理账号…</p>
+    <form id="login-form" hidden>
+      <label>管理账号<input id="username" name="username" value="admin" autocomplete="username" readonly /></label>
+      <label>管理密码<input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required /></label>
+      <label id="confirm-row" hidden>确认密码<input id="confirm-password" type="password" autocomplete="new-password" maxlength="256" /></label>
+      <button id="login-submit" type="submit">登录</button>
+    </form>
+    <p id="login-message" class="message" role="status" aria-live="polite"></p>
+    <p class="security-note">仅管理代理分发器。30 分钟无操作需重新登录，登录最长保持 12 小时。</p>
+  </main>
+  <script src="/login.js"></script>
+</body>
+</html>
