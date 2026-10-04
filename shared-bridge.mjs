@@ -14,6 +14,7 @@ const activeFile = process.env.ACTIVE_BRIDGES_FILE || join(root, 'data', 'active
 const requestedLimit = Number(process.env.MAX_ACTIVE_NODES || 200);
 const maxActive = Number.isInteger(requestedLimit) ? Math.min(500, Math.max(1, requestedLimit)) : 200;
 const proxyListen = process.env.PROXY_LISTEN || '127.0.0.1';
+const publicProxyHost = process.env.PUBLIC_PROXY_HOST || '127.0.0.1';
 const configuredPortMin = Number(process.env.PROXY_PORT_MIN || 0);
 const configuredPortMax = Number(process.env.PROXY_PORT_MAX || 0);
 const portMin = Number.isInteger(configuredPortMin) && configuredPortMin >= 1024 && configuredPortMin <= 65535 ? configuredPortMin : 0;
@@ -109,9 +110,9 @@ async function launch(entries) {
   try {
     const controllerConfig = `external-controller: 127.0.0.1:${controller.port}\nsecret: ${JSON.stringify(controller.secret)}\n`;
     await writeFile(config, controllerConfig + configuredText(entries), { encoding: 'utf8', mode: 0o600 });
-    const checked = spawnSync(engine, ['-t', '-f', config], { windowsHide: true, encoding: 'utf8', timeout: 30000 });
+    const checked = spawnSync(engine, ['-t', '-d', directory, '-f', config], { windowsHide: true, encoding: 'utf8', timeout: 30000 });
     if (checked.error || checked.status !== 0) throw new Error('节点配置未通过 Mihomo 校验');
-    child = spawn(engine, ['-f', config], { windowsHide: true, stdio: 'ignore' });
+    child = spawn(engine, ['-d', directory, '-f', config], { windowsHide: true, stdio: 'ignore' });
     child.on('error', () => {});
     for (const entry of entries) {
       let ready = false;
@@ -231,7 +232,7 @@ async function replace(next) {
   }
 }
 
-const publicBridge = entry => ({ appId: entry.appId, name: entry.name, port: entry.port, username: entry.username, password: entry.password, pid: runtime?.child.pid ?? null, running: Boolean(runtime && runtime.child.exitCode === null) });
+const publicBridge = entry => ({ appId: entry.appId, name: entry.name, host: publicProxyHost, port: entry.port, username: entry.username, password: entry.password, pid: runtime?.child.pid ?? null, running: Boolean(runtime && runtime.child.exitCode === null) });
 export const listBridges = () => [...active.values()].map(publicBridge);
 export const getBridgeSnapshot = () => [...active.values()].map(entry => ({ ...entry }));
 
