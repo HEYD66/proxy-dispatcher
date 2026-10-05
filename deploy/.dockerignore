@@ -1,0 +1,9 @@
+node_modules
+data
+dist
+backups
+.git
+vendor/mihomo/mihomo.exe
+*.tar.gz
+*.zip
+deploy
