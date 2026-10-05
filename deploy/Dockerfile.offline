@@ -1,0 +1,10 @@
+# An offline image built from the verified Linux runtime on the deployment host.
+FROM scratch
+ARG APP_UID=10001
+ARG APP_GID=10001
+COPY rootfs/ /
+USER ${APP_UID}:${APP_GID}
+WORKDIR /app
+ENV NODE_ENV=production SERVER_MODE=1 HOST=127.0.0.1 PORT=4173 MIHOMO_PATH=/app/vendor/mihomo/mihomo TZ=Asia/Shanghai
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["/usr/local/bin/node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+ENTRYPOINT ["/usr/local/bin/node", "/app/server.mjs"]

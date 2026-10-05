@@ -5,7 +5,7 @@
 ## 前置条件
 
 - Ubuntu 22.04/24.04 或兼容的 systemd Linux。
-- Node.js 20 或更高版本。
+- Node.js 20 或更高版本（systemd 方式需要；Docker 在线构建由镜像提供）。
 - 一份与服务器 CPU/系统匹配的 Mihomo Linux 二进制文件，放到 `/opt/proxy-dispatcher/bin/mihomo`，并执行 `chmod 755`。
 - 域名、HTTPS 证书和 Nginx。管理页面不要直接把 Node 端口暴露到公网。
 
@@ -15,7 +15,7 @@
 
 ### Docker 部署
 
-服务器已安装 Docker 时，准备好项目目录、`vendor/mihomo/mihomo` 和环境文件后执行：
+服务器已安装 Docker 时，准备好项目目录、`vendor/mihomo/mihomo` 和环境文件后执行。能访问 Docker Hub 时使用标准镜像构建：
 
 ```bash
 chmod 700 deploy/docker-build.sh deploy/docker-run.sh
@@ -27,6 +27,15 @@ docker ps --filter name=proxy-dispatcher
 docker logs --tail 100 proxy-dispatcher
 ```
 
+如果服务器不能访问 Docker Hub，使用离线构建器。它从已验证的 `/opt/proxy-dispatcher/runtime/node`、依赖、前端和 Mihomo 二进制组装 `scratch` 镜像，不把服务器数据目录、环境文件或证书复制进镜像：
+
+```bash
+chmod 700 deploy/docker-build-offline.sh deploy/docker-run.sh
+PROXY_DISPATCHER_IMAGE=proxy-dispatcher:$(cat RELEASE) \
+deploy/docker-build-offline.sh
+PROXY_DISPATCHER_IMAGE=proxy-dispatcher:$(cat RELEASE) deploy/docker-run.sh
+```
+
 容器使用 `--network host`，Node 仍由环境文件绑定 `127.0.0.1:4173`；Nginx 的 HTTPS 和 SSH 隧道无需改端口。数据绑定到 `/var/lib/proxy-dispatcher/data`，密码哈希、节点和设置不会写进镜像。容器以非 root 用户运行，丢弃 Linux capabilities，根文件系统只读，仅 `/tmp` 和数据目录可写，并限制 768 MB 内存。更新时构建新标签，再停止旧容器并运行 `docker-run.sh`；回滚使用旧镜像标签。
 
 切换前先停止 systemd，切回时先删除容器再启动 systemd：
@@ -36,7 +45,7 @@ systemctl disable --now proxy-dispatcher
 systemctl enable --now proxy-dispatcher
 ```
 
-Docker 镜像构建需要拉取官方 Node 基础镜像；若服务器不能访问镜像仓库，应先在可联网机器构建并导出镜像后导入服务器。
+标准镜像构建需要拉取官方 Node 基础镜像；离线构建不需要外网镜像仓库，但要求本机 Node 二进制为 Linux x64 且 Mihomo 二进制为静态文件。
 
 ```bash
 sudo useradd --system --home /opt/proxy-dispatcher --shell /usr/sbin/nologin proxy-dispatcher

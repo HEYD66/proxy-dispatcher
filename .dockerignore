@@ -6,4 +6,3 @@ backups
 vendor/mihomo/mihomo.exe
 *.tar.gz
 *.zip
-deploy
