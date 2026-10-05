@@ -11,6 +11,33 @@
 
 ## 安装
 
+本项目支持 systemd 和 Docker 两种方式。Docker 方式适合需要固定 Node、依赖和 Mihomo 版本并快速回滚的服务器；Linux Docker 部署使用 host network，以保留管理回环地址和 21000–21250 代理端口。不要同时启动两个版本。
+
+### Docker 部署
+
+服务器已安装 Docker 时，准备好项目目录、`vendor/mihomo/mihomo` 和环境文件后执行：
+
+```bash
+chmod 700 deploy/docker-build.sh deploy/docker-run.sh
+PROXY_DISPATCHER_UID="$(id -u proxy-dispatcher)" \
+PROXY_DISPATCHER_GID="$(id -g proxy-dispatcher)" \
+deploy/docker-build.sh
+deploy/docker-run.sh
+docker ps --filter name=proxy-dispatcher
+docker logs --tail 100 proxy-dispatcher
+```
+
+容器使用 `--network host`，Node 仍由环境文件绑定 `127.0.0.1:4173`；Nginx 的 HTTPS 和 SSH 隧道无需改端口。数据绑定到 `/var/lib/proxy-dispatcher/data`，密码哈希、节点和设置不会写进镜像。容器以非 root 用户运行，丢弃 Linux capabilities，根文件系统只读，仅 `/tmp` 和数据目录可写，并限制 768 MB 内存。更新时构建新标签，再停止旧容器并运行 `docker-run.sh`；回滚使用旧镜像标签。
+
+切换前先停止 systemd，切回时先删除容器再启动 systemd：
+
+```bash
+systemctl disable --now proxy-dispatcher
+systemctl enable --now proxy-dispatcher
+```
+
+Docker 镜像构建需要拉取官方 Node 基础镜像；若服务器不能访问镜像仓库，应先在可联网机器构建并导出镜像后导入服务器。
+
 ```bash
 sudo useradd --system --home /opt/proxy-dispatcher --shell /usr/sbin/nologin proxy-dispatcher
 sudo mkdir -p /opt/proxy-dispatcher/bin /var/lib/proxy-dispatcher/data /etc/proxy-dispatcher
