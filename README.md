@@ -2,6 +2,8 @@
 
 本机订阅节点管理与按需分发工具。可一次粘贴多条订阅链接（每行一条），分别抓取、解析和更新。一个来源失败不影响其他来源。导入只保存节点，不自动启动节点或对全部节点测速。
 
+本仓库同时包含 Windows 桌面版和 Linux 服务器版，共用节点解析、管理服务及前端源码。Windows 版通过 `npm.cmd run package:win` 打包；Linux 版通过 `npm run package:linux` 生成服务端目录，或使用 `deploy/` 中的 systemd、Docker 部署文件。Linux 版需另行提供与目标系统架构匹配的 Mihomo 可执行文件；仓库内附带的 `mihomo.exe` 仅供 Windows 使用。运行时的订阅链接、节点凭据和管理账号存放在本机数据目录，不应提交到公开仓库。
+
 ## 转发方式
 
 - 原生 HTTP/HTTPS/SOCKS5：有账号和密码时直接导出四段式代理行，不经过 Mihomo。
@@ -50,6 +52,6 @@ npm.cmd start
 
 ## Linux 服务器版
 
-服务器部署文件位于 `deploy/`。管理服务默认仍绑定 `127.0.0.1:4173`，使用 Nginx 的 HTTPS 和 Basic Auth 对外提供管理页面；共享 Mihomo 代理端口通过 `PROXY_LISTEN=0.0.0.0` 对外提供，每个端口使用独立的随机认证。服务器必须使用与 Linux CPU 架构匹配的 Mihomo 二进制，并通过 `MIHOMO_PATH` 指定。完整步骤见 [`deploy/README-linux.md`](deploy/README-linux.md)。
+服务器部署文件位于 `deploy/`。管理服务默认仍绑定 `127.0.0.1:4173`，使用 Nginx 提供 HTTPS，并由应用自身的账号登录保护管理页面；共享 Mihomo 代理端口通过 `PROXY_LISTEN=0.0.0.0` 对外提供，每个端口使用独立的随机认证。服务器必须使用与 Linux CPU 架构匹配的 Mihomo 二进制，并通过 `MIHOMO_PATH` 指定。完整步骤见 [`deploy/README-linux.md`](deploy/README-linux.md)。
 
 服务器模式通过 `SERVER_MODE=1` 放宽管理页面的 Host/Origin 检查，因为浏览器会从 Nginx 域名访问本机 Node 服务；Node 本身仍只监听回环地址。服务器模式的变更 API 需要页面自动添加的受信任请求头，并按客户端 IP 限流，订阅拉取每分钟最多 30 次；Nginx 示例关闭 `/api/fetch` 访问日志，避免订阅 Token 进入日志。示例使用 `PROXY_PORT_MIN=21000`、`PROXY_PORT_MAX=21250`，防火墙只放行该端口段。当前没有在远程 2 核 2GB 主机上做吞吐容量承诺，部署后应先启用少量节点观察带宽、连接数和内存，再逐步增加 `MAX_ACTIVE_NODES`。
